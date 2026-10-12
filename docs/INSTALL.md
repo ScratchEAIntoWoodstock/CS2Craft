@@ -6,7 +6,9 @@ CS2Craft runs on Windows only. The project folder holds source code; each machin
 
 Copy the project folder without `runtime/`, `.cache/`, `dist/` and any `bin/`, `obj/`, `build/` or `.gradle/` folders; the new machine recreates them. A zip of the folder or a private git repository both work.
 
-Windows marks files from a downloaded zip as untrusted, which stops PowerShell scripts from running. Once, in the project folder:
+**Easiest:** extract the zip, then double-click **`Setup.cmd`** in the project folder. Windows may warn that the publisher could not be verified; choose Run. It unblocks the extracted files and runs step 2 for you. Later, **`Play.cmd`** starts a game (step 5). Both run the scripts for that one window only and change no Windows setting.
+
+To use the PowerShell scripts directly instead, allow them once. Windows marks files from a downloaded zip as untrusted, so in the project folder run:
 
 ```powershell
 Get-ChildItem -Recurse | Unblock-File
@@ -14,6 +16,8 @@ Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 ```
 
 ## 2. Install what is missing
+
+Double-click `Setup.cmd`, or:
 
 ```powershell
 .\tools\Install-Prerequisites.ps1
@@ -76,6 +80,8 @@ Creates the private CS2 copy in `runtime/`, installs Metamod, CounterStrikeSharp
 
 ## 5. Play
 
+Double-click `Play.cmd`, or:
+
 ```powershell
 .\tools\Play.ps1
 ```
@@ -97,7 +103,7 @@ The plugin's settings file is created on first launch at `runtime\game\csgo\addo
 
 | Message | Fix |
 |---|---|
-| `...cannot be loaded because running scripts is disabled` or `is not digitally signed` | Step 1: `Unblock-File` and `Set-ExecutionPolicy`. |
+| `...cannot be loaded because running scripts is disabled` or `is not digitally signed` | Use `Setup.cmd` / `Play.cmd`, or step 1's `Unblock-File` and `Set-ExecutionPolicy`. |
 | `Refusing ...: signature ...` (installer) | A download did not come signed by its publisher (a proxy, a broken download, or a changed link). Nothing was run; try again later or install that item yourself from the vendor's site. |
 | `... exited with code ...` (installer) | That vendor installer failed or was cancelled. Rerun `Install-Prerequisites.ps1`; it skips what is already installed. |
 | `CS2 not found. Pass -CS2Root...` | Pass the folder that contains `game\bin\win64\cs2.exe`. |

@@ -8,7 +8,7 @@ A real Dust II client has now shown Minecraft blocks, held items, a shield, hotb
 
 ## Install on another machine
 
-See [docs/INSTALL.md](docs/INSTALL.md). In short: Steam with CS2, the .NET 10 SDK, Visual Studio 2022 with C++, Java 25 and about 60 GB free. `.\tools\Install-Prerequisites.ps1` installs whatever is missing from the official vendors (asking first), then offers to build and prepare. `.\tools\Check-Prerequisites.ps1` only lists what is missing.
+See [docs/INSTALL.md](docs/INSTALL.md). In short: Steam with CS2, the .NET 10 SDK, Visual Studio 2022 with C++, Java 25 and about 60 GB free. Double-click `Setup.cmd` (or run `.\tools\Install-Prerequisites.ps1`): it installs whatever is missing from the official vendors (asking first), then offers to build and prepare. `.\tools\Check-Prerequisites.ps1` only lists what is missing.
 
 ## Run on this machine
 
