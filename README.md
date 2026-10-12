@@ -8,7 +8,7 @@ A real Dust II client has now shown Minecraft blocks, held items, a shield, hotb
 
 ## Install on another machine
 
-See [docs/INSTALL.md](docs/INSTALL.md). In short: Steam with CS2, the .NET 10 SDK, Visual Studio 2022 with C++, Java 25 and about 60 GB free. `.\tools\Check-Prerequisites.ps1` lists what is missing.
+See [docs/INSTALL.md](docs/INSTALL.md). In short: Steam with CS2, the .NET 10 SDK, Visual Studio 2022 with C++, Java 25 and about 60 GB free. `.\tools\Install-Prerequisites.ps1` installs whatever is missing from the official vendors (asking first), then offers to build and prepare. `.\tools\Check-Prerequisites.ps1` only lists what is missing.
 
 ## Run on this machine
 
@@ -121,7 +121,7 @@ Blocks receive approximate Minecraft lighting and no CS2 shadows. Transparency i
 
 ## Build / prepare another checkout
 
-Requirements: Windows x64, .NET 10 SDK, Java 25, Visual Studio 2022 C++ tools and CMake. Scripts detect the Java 25 runtime bundled with Minecraft Launcher on this machine; `-JavaHome` selects another.
+Requirements: Windows x64, .NET 10 SDK, Java 25, Visual Studio 2022 C++ tools and CMake. Scripts find Java 25 from the Minecraft Launcher, `JAVA_HOME` or an Eclipse Temurin install (`tools/lib/Prerequisites.ps1`); `-JavaHome` selects another.
 
 ```powershell
 .\tools\Build.ps1

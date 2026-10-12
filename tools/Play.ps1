@@ -7,8 +7,10 @@ if(!(Test-Path -LiteralPath $installPath)){throw 'Run tools/Build.ps1 and tools/
 $install=Get-Content -LiteralPath $installPath -Raw | ConvertFrom-Json
 $renderer=Join-Path $install.GameDirectory 'addons/counterstrikesharp/plugins/CS2Craft.Server/CS2Craft.Renderer.dll'
 if(!(Test-Path -LiteralPath $renderer)){throw 'Run tools/Build.ps1 and tools/Prepare-CS2.ps1 to deploy the renderer.'}
-if(!$JavaHome){$JavaHome='C:\Program Files (x86)\Minecraft Launcher\runtime\java-runtime-epsilon\windows-x64\java-runtime-epsilon'}
-if(!(Test-Path -LiteralPath (Join-Path $JavaHome 'bin/java.exe'))){throw 'Pass -JavaHome pointing to Java 25.'}
+. (Join-Path $PSScriptRoot 'lib\Prerequisites.ps1')
+$java=Find-Java25 $JavaHome
+if(!$java){throw 'Java 25 not found. Run tools\Install-Prerequisites.ps1, or pass -JavaHome pointing to Java 25.'}
+$JavaHome=$java.Home
 & (Join-Path $PSScriptRoot 'Start-CS2.ps1') -Map $Map
 $hostProcessId=[int](Get-Content (Join-Path $project 'runtime/last-cs2-pid.txt'))
 $runId=Get-Date -Format 'yyyyMMdd-HHmmss'

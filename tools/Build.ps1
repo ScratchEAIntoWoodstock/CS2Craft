@@ -14,11 +14,10 @@ try {
     dotnet build tools/CS2Craft.Probe -c Release
     if($LASTEXITCODE -ne 0){throw 'Probe build failed'}
     if(!$SkipMinecraft) {
-        if(!$JavaHome) {
-            $candidate='C:\Program Files (x86)\Minecraft Launcher\runtime\java-runtime-epsilon\windows-x64\java-runtime-epsilon'
-            if(Test-Path -LiteralPath (Join-Path $candidate 'bin/java.exe')){$JavaHome=$candidate}
-        }
-        if(!$JavaHome){throw 'Pass -JavaHome pointing to a Java 25 installation.'}
+        . (Join-Path $PSScriptRoot 'lib\Prerequisites.ps1')
+        $java=Find-Java25 $JavaHome
+        if(!$java){throw 'Java 25 not found. Run tools\Install-Prerequisites.ps1, or pass -JavaHome pointing to a Java 25 installation.'}
+        $JavaHome=$java.Home
         $env:JAVA_HOME=$JavaHome
         $env:GRADLE_USER_HOME=Join-Path $project '.cache/gradle'
         & .\minecraft\gradlew.bat -p minecraft build --no-daemon
