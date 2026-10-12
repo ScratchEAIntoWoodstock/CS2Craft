@@ -68,8 +68,10 @@ function Find-WindowsSdk {
 }
 
 function Get-JavaMajor([string]$JavaHome) {
-    $release=Join-Path $JavaHome 'release'
-    if(!(Test-Path -LiteralPath (Join-Path $JavaHome 'bin/java.exe')) -or !(Test-Path -LiteralPath $release)){return 0}
+    try{
+        $release=Join-Path $JavaHome 'release'
+        if(!(Test-Path -LiteralPath (Join-Path $JavaHome 'bin/java.exe')) -or !(Test-Path -LiteralPath $release)){return 0}
+    }catch{return 0} # not even a valid path (e.g. a mangled command-line argument)
     $m=[regex]::Match([IO.File]::ReadAllText($release),'JAVA_VERSION="(\d+)')
     if($m.Success){[int]$m.Groups[1].Value}else{0}
 }
@@ -78,7 +80,7 @@ function Get-JavaMajor([string]$JavaHome) {
 # (this process, then the user's and the machine's saved value: a fresh install is not in this
 # process yet), Eclipse Adoptium installs, then java on PATH. Returns @{Home; From} or $null.
 function Find-Java25([string]$JavaHome='') {
-    if($JavaHome){if((Get-JavaMajor $JavaHome) -ge 25){return @{Home=$JavaHome;From='-JavaHome'}};return $null}
+    if($JavaHome){if((Get-JavaMajor $JavaHome) -ge 25){return @{Home=$JavaHome.TrimEnd('\','/');From='-JavaHome'}};return $null}
     $candidates=@(@{Home=$script:MinecraftLauncherJava;From='Minecraft Launcher'})
     foreach($scope in 'Process','User','Machine'){
         $value=[Environment]::GetEnvironmentVariable('JAVA_HOME',$scope)
@@ -91,7 +93,7 @@ function Find-Java25([string]$JavaHome='') {
     }
     $onPath=(Get-Command java -ErrorAction SilentlyContinue).Source
     if($onPath){$candidates+=@{Home=(Split-Path (Split-Path $onPath -Parent) -Parent);From='PATH'}}
-    foreach($c in $candidates){if((Get-JavaMajor $c.Home) -ge 25){return $c}}
+    foreach($c in $candidates){if((Get-JavaMajor $c.Home) -ge 25){$c.Home=$c.Home.TrimEnd('\','/');return $c}}
     $null
 }
 

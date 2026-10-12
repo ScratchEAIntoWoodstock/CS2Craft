@@ -243,6 +243,7 @@ public sealed partial class CS2CraftPlugin : BasePlugin, IPluginConfig<CraftConf
             PlayerState playerState=default;
             bool ready = bridge.MinecraftAlive && bridge.TryReadPlayer(out playerState) && (playerState.Flags&Protocol.McInWorld)!=0;
             if(!ready){hud.InputMode(false,false,ViewWidth,ViewHeight);input.Release(bridge);}
+            WarnIfMinecraftMissing(ready);
             presentation.Update(ready && hud.Frames>0,Config.HideCS2Viewmodel,Config.HideCS2Hud);
             if(pendingPlay&&ready&&playerState.TeleportAck==teleport&&(playerState.Flags&Protocol.McDead)==0&&collision?.Ready(playerState.Position)==true)
                 DriveCore(owner,message=>owner?.PrintToChat(message));
@@ -321,6 +322,23 @@ public sealed partial class CS2CraftPlugin : BasePlugin, IPluginConfig<CraftConf
             catch (Exception detach) { Logger.LogError(detach, "CS2Craft: restoring CS2 controls failed"); }
             if (corrupt) { bridge?.Dispose(); bridge = null; }
         }
+    }
+    float minecraftWaitStart=-1,minecraftWarnAt=-1;
+    /// <summary>
+    /// css_cs2craft_play waits for Minecraft indefinitely; say so in chat (every two minutes) when it never
+    /// connects, instead of looking as if nothing happened.
+    /// </summary>
+    void WarnIfMinecraftMissing(bool ready)
+    {
+        if(ready||!pendingPlay||bridge?.MinecraftAlive==true){minecraftWaitStart=minecraftWarnAt=-1;return;}
+        float now=GameServer.CurrentTime;
+        if(minecraftWaitStart<0){minecraftWaitStart=now;minecraftWarnAt=now+90;return;}
+        if(now<minecraftWarnAt)return;
+        minecraftWarnAt=now+120;
+        int waited=(int)(now-minecraftWaitStart);
+        string message=$"CS2Craft: still waiting for Minecraft after {waited} s. The very first launch downloads Minecraft's files (several minutes); otherwise check the window that ran Play.cmd and runtime\\minecraft-*.stderr.log in the CS2Craft folder.";
+        owner?.PrintToChat(message);
+        Logger.LogWarning("{Message}",message);
     }
     void MirrorActors(CCSPlayerPawn playerPawn)
     {
