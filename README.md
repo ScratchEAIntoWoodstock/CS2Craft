@@ -6,6 +6,10 @@ This Windows project runs real Minecraft gameplay inside Counter-Strike 2. It re
 
 A real Dust II client has now shown Minecraft blocks, held items, a shield, hotbar, and inventory. The live test moved the CS2 pawn using Minecraft physics, hit a CS2 bot with a diamond sword (100 → 65 health), moved the sword between inventory slots, and restored normal CS2 movement. See [verification](docs/VERIFICATION.md).
 
+## Install on another machine
+
+See [docs/INSTALL.md](docs/INSTALL.md). In short: Steam with CS2, the .NET 10 SDK, Visual Studio 2022 with C++, Java 25 and about 60 GB free. `.\tools\Check-Prerequisites.ps1` lists what is missing.
+
 ## Run on this machine
 
 The private CS2 runtime and compiled plugin are prepared in this project.
