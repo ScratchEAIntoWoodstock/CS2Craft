@@ -6,6 +6,8 @@ CS2Craft runs on Windows only. The project folder holds source code; each machin
 
 Copy the project folder without `runtime/`, `.cache/`, `dist/` and any `bin/`, `obj/`, `build/` or `.gradle/` folders; the new machine recreates them. A zip of the folder or a private git repository both work.
 
+Put it in a short folder path such as `C:\CS2Craft`. The C++ build fails when the project folder's path is longer than about 130 characters (Windows' path-length limit), and deep folders like `Downloads\CS2Craft (1)\CS2Craft` get close. The check script warns about it.
+
 **Easiest:** extract the zip, then double-click **`Setup.cmd`** in the project folder. Windows may warn that the publisher could not be verified; choose Run. It unblocks the extracted files and runs step 2 for you. Later, **`Play.cmd`** starts a game (step 5). Both run the scripts for that one window only and change no Windows setting.
 
 To use the PowerShell scripts directly instead, allow them once. Windows marks files from a downloaded zip as untrusted, so in the project folder run:
@@ -108,6 +110,7 @@ The plugin's settings file is created on first launch at `runtime\game\csgo\addo
 | `... exited with code ...` (installer) | That vendor installer failed or was cancelled. Rerun `Install-Prerequisites.ps1`; it skips what is already installed. |
 | `CS2 not found. Pass -CS2Root...` | Pass the folder that contains `game\bin\win64\cs2.exe`. |
 | `Java 25 not found...` | Run `Install-Prerequisites.ps1`, or pass `-JavaHome` with the folder that contains `bin\java.exe`. |
+| `FileTracker : error FTK1011` or `Detecting C compiler ABI info - failed` | The project folder's path is too long. Move it to a short path such as `C:\CS2Craft`, delete `native\build`, and build again. |
 | `Install the Visual Studio C++ tools and CMake` / `Native configure failed` | Add the C++ workload and CMake in the Visual Studio Installer; the check script shows which is missing. |
 | `Checksum mismatch` | A download was corrupted or changed: delete `.cache\downloads` and rerun `Prepare-CS2.ps1`. |
 | `Run tools/Build.ps1 and tools/Prepare-CS2.ps1 first.` | Do step 4 first. |

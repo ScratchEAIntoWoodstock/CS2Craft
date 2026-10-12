@@ -21,6 +21,12 @@ if([Environment]::Is64BitOperatingSystem -and [Environment]::OSVersion.Platform 
     Report PASS 'Windows x64' ([Environment]::OSVersion.VersionString)
 }else{Report FAIL 'Windows x64' 'CS2Craft runs on 64-bit Windows 10/11 only.'}
 
+# Visual Studio's build tracker fails once build paths pass Windows' 260-character limit; the deepest
+# native build file sits about 120 characters below the project folder.
+if($project.Length -gt 130){Report FAIL 'Project folder path' "$($project.Length) characters is too long for the C++ build. Move the folder somewhere short, such as C:\CS2Craft."}
+elseif($project.Length -gt 80){Report WARN 'Project folder path' "$($project.Length) characters; a shorter path (such as C:\CS2Craft) avoids Windows path-length limits."}
+else{Report PASS 'Project folder path' $project}
+
 # Steam and Counter-Strike 2 (same discovery as Prepare-CS2.ps1)
 $steam=Get-SteamPath
 if($steam){Report PASS 'Steam' $steam}else{Report FAIL 'Steam' 'Not installed (no HKCU\Software\Valve\Steam). Install-Prerequisites.ps1 can install it.'}
