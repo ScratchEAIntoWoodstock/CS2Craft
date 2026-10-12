@@ -1,0 +1,84 @@
+# CS2Craft implementation notes
+
+## Ownership
+
+Minecraft owns inventory, crafting, items, damage calculation, block state, persistence and player physics. CS2 owns its map, bots and the pawn targeted by bots. The plugin mirrors bots into Minecraft and moves the CS2 pawn to Minecraft's position in drive mode.
+
+Protocol is SkyCraft release **v0.1.0 / version 10**, not main-branch version 11. The mapping is `Local\CS2Craft_v1`, 200,327,168 bytes.
+
+One block is 40 Source units:
+
+```text
+Minecraft (x,y,z) = (Source.x/40, Source.z/40, -Source.y/40)
+Source (x,y,z) = (Minecraft.x*40, -Minecraft.z*40, Minecraft.y*40)
+Minecraft yaw = wrap(-Source yaw - 90)
+Minecraft pitch = Source pitch
+```
+
+## Thread / memory rules
+
+Host/player/actor records use seqlocks. Input/combat use bounded fixed-record rings. Collision/rendering use aligned byte rings with explicit wrap padding. HUD exchange is the upstream triple buffer: initial renderer front=2, Java back=1, shared middle=0.
+
+Only the C# tick thread produces shared input, including damage, key states and events drained from the native window queue. Minecraft produces combat and render data. The native compositor consumes render/HUD streams in CS2; the fixture consumes them during isolated testing. Never use both consumers together.
+
+C# volatile publication, Windows interlocked operations and Java acquire/release FFM handles synchronize ownership. Invalid counters, dimensions and non-finite positions are rejected. A second host cannot reset a live mapping.
+
+## Graphics
+
+CounterStrikeSharp loads the DLL into the local CS2 process. It refuses secure/dedicated processes and hooks DXGI Present for DX11. Whole-context D3D11.1 state swaps preserve the game's pipeline.
+
+The world backend retains texture atlases/patches, entity textures, sections, avatar batches and scene meshes. It validates packet sizes, indices and vertices, caps mesh memory at 128 MiB and textures at 256 MiB, and removes zero-vertex sections. Opaque/cutout geometry writes depth; translucent batches blend without writing depth. Sampling is point-filtered; lighting is approximate Minecraft sky/block light plus face shading.
+
+A networked camera entity follows Minecraft's interpolated feet and eye height, including crouch, and its F5 mode/distance. Front view reverses yaw/pitch. A small CS2 hull trace shortens the camera against map walls. The native renderer receives the same camera position/orientation and a provisional Source-style 4:3 FOV conversion. Server/client interpolation still differs; this is not a hook of CS2's final view matrix.
+
+The CS2 pawn and its weapon attachments are made transparent while driving and restored on detach. Minecraft supplies Steve's posed body, armor, held items and textures; avatar batches render at Minecraft's feet in third person. The pinned 26.3 default wide Steve skin is applied to the local linked player only.
+
+Occlusion uses a separate depth buffer populated with actual map collision triangles. Invisible player-clip surfaces participate in movement but not occlusion or block targeting. Dynamic bots/doors/props, transparent surfaces and shadows still need separate rendering integration.
+
+Minecraft's premultiplied HUD is composited after world drawing. A virtual cursor is drawn into that layer when native inventory routing is active. The compositor can capture the actual CS2 backbuffer on explicit diagnostic requests.
+
+On stop, hooks are disabled and resources released. Disabled Present trampolines and the DLL remain resident so an in-flight callback can still return safely. A window subclass is restored if it remains the current procedure; if another overlay chains it, it remains dormant rather than breaking that chain.
+
+## Input and presentation
+
+Desktop polling is restricted to foreground CS2 in the same process. Native window routing queues wheel/text and tracks raw mouse movement for a virtual inventory cursor. The tick thread publishes the cursor before clicks. Raw mouse input and mouse button messages are consumed while driving. Relative gameplay deltas feed an independent camera orientation; GUI deltas move the inventory cursor. Focus loss and GUI transitions discard pending look deltas. Sensitivity uses available CS2 sensitivity/m_yaw/m_pitch values, with defaults when unavailable.
+
+CS2's SDL3 reads relative mouse input on its own thread through a hidden raw-input window (`GetRawInputBuffer`), so `WM_INPUT` may never reach the subclassed game window. The renderer therefore also hooks `GetRawInputBuffer`/`GetRawInputData` with MinHook and feeds mouse packets read there into the same handler while routing is active and CS2 is foreground. The window procedure reads through the trampoline, so its packets are not counted twice. `css_cs2craft_status` reports window and hooked raw mouse packet counts and the hook status (0 = both hooks active).
+
+Physical mouse/text/wheel routing has not yet passed manual acceptance. The automated inventory test directly drives the shared input protocol. Some host bindings/menu transitions can still conflict with Minecraft. F5 is forwarded; CS2 duck prediction no longer controls the Minecraft camera.
+
+Local `r_drawviewmodel` and `cl_drawhud` values are saved, disabled while Minecraft is active, and restored on detach/loss/unload. The host must release native input on stale/dead links. The camera is recreated if round cleanup removes its view entity. The Minecraft dev client starts hidden and saves/quits when its host exits; the launcher supplies a host PID for shutdown even if attachment never completes.
+
+## Collision
+
+The launch script uses tools/CS2Craft.MapExport (pinned ValveResourceFormat 20.0.6980) to read world_physics.vphys_c or the PHYS block of world_physics.vmdl_c from the local map VPK. Triangular meshes and convex hull faces become exact triangles at 40 Source units per block. Sky/grenade-only shapes are excluded. Player-clip triangles carry flag bit 1 (value 2), a CS2Craft extension of the pinned protocol. Unknown upstream peers should not consume this stream.
+
+The cache is a local .c2map file: magic 0x3243324D, format 1, triangle count, then 40 bytes per triangle (nine floats and flags). The launcher invalidates the cache when the source VPK size or modification timestamp changes. No extracted Valve geometry is packaged with source.
+
+Loading/indexing and surface voxelization run on worker tasks. Nearby eight-block regions are reprioritized by distance after every completed region, across a five-region cube centered on the player. Triangles publish before their 8x8x8 support masks; only then is a region known. Every movement sweep checks coverage, so unloaded space cannot act as air. The renderer retains at most 128 nearby occluder regions.
+
+Both LocalPlayer and ServerPlayer movement use the same common Entity collision mixin, resolving exact triangles after vanilla Minecraft blocks. Keeping the server on voxel collision causes position corrections against otherwise walkable terrain. Triangle-only queries are scoped to movement; sneak edge/pose-clearance queries see geometry again. Pose checks use triangle/AABB overlap rather than voxel thickness, with a small foot-contact tolerance on slopes. Initial spawn correction is limited to 0.15 blocks instead of lifting onto surfaces up to 2.5 blocks overhead.
+
+The extraction describes baked map physics, not runtime changes to doors, breakables or moving props. Minecraft's collision cache still grows as the player explores a map. Placed Minecraft blocks do not create CS2 physics or bot navigation obstacles.
+
+## Gameplay and lifecycle
+
+Attach requires one living local human, `sv_lan 1`, and `-insecure`. Actors use serial-bearing raw handles, avoiding stale entity index reuse. Observation is the default; `css_cs2craft_play` explicitly requests gameplay once Minecraft acknowledges the teleport and collision is ready.
+
+Drive mode stores both movement-type fields, sets them to NONE, and teleports the CS2 pawn to valid Minecraft positions. It holds the CS2 weapon-service next-attack time and replicates blocked primary/secondary attack ticks for every held weapon while Minecraft owns combat. Original attack ticks and movement are restored together. Heartbeat loss, invalid pawn, unload and detach restore controls.
+
+Minecraft sword hits currently change bot health directly, with lethal hits using suicide. Attribution, armor rules, impulses, projectiles/explosions and kill credit are incomplete.
+
+A death keeps the player linked. When Minecraft reports a death, the plugin leaves drive mode first, so the damage hook cannot cancel the suicide, then kills the pawn and parks Minecraft with the host loading flag. After `RespawnDelaySeconds` (default 3; negative waits for CS2's own respawn) the local player is respawned. On any spawn of the linked player (death or round start), Minecraft is teleported to the new pawn and gameplay resumes if it was active. A CS2-side death that Minecraft did not report does not kill the Minecraft player; it is moved to the respawn point. Incoming CS2 damage is forwarded at the upstream 5:1 health scale and suppressed only if successfully queued. Incoming bot-fire behavior still needs a live acceptance test.
+
+`tools/Play.ps1` selects a save named for the launch map. Direct developer launches default to a separate configurable save name. Changing CS2 maps inside a running session does not yet automatically switch Minecraft saves.
+
+## Remaining work
+
+- Dynamic obstacles, bounded cache eviction/resampling, additional maps and long movement routes.
+- Final CS2 render-view/depth integration, smoother motion, FOV transitions, lighting and shadows.
+- CS2 collision/navigation for placed blocks.
+- Manual GUI/input tests, host binding conflicts, resolution changes and overlay coexistence.
+- Full damage, projectiles, death/respawn and lifecycle recovery.
+- Authenticated Minecraft installation/profile workflow.
+- Multiplayer only after the local client is reliable.

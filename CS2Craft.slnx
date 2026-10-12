@@ -1,0 +1,13 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/CS2Craft.Bridge/CS2Craft.Bridge.csproj" />
+    <Project Path="src/CS2Craft.Server/CS2Craft.Server.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/CS2Craft.Tests/CS2Craft.Tests.csproj" />
+  </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/CS2Craft.MapExport/CS2Craft.MapExport.csproj" />
+    <Project Path="tools/CS2Craft.Probe/CS2Craft.Probe.csproj" />
+  </Folder>
+</Solution>

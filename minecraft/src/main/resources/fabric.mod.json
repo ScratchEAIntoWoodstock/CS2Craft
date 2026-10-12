@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "id": "skycraft",
+  "version": "${version}",
+  "name": "CS2Craft Minecraft Bridge",
+  "description": "Experimental CS2 bridge, derived from SkyCraft v0.1.0. Requires the CS2Craft host.",
+  "authors": ["chasmlol"],
+  "contact": {
+    "sources": "https://github.com/chasmlol/SkyCraft"
+  },
+  "license": "MIT",
+  "environment": "client",
+  "entrypoints": {
+    "main": ["dev.skycraft.SkyCraft"],
+    "client": ["dev.skycraft.client.SkyCraftClient"]
+  },
+  "mixins": [
+    "skycraft.mixins.json",
+    { "config": "skycraft.client.mixins.json", "environment": "client" }
+  ],
+  "depends": {
+    "fabricloader": ">=0.19.5",
+    "minecraft": "~26.3",
+    "java": ">=25",
+    "fabric-api": "*"
+  }
+}

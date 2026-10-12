@@ -1,0 +1,1 @@
+<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><OutputType>Exe</OutputType></PropertyGroup><ItemGroup><PackageReference Include="ValveResourceFormat" Version="20.0.6980"/><ProjectReference Include="../../src/CS2Craft.Bridge/CS2Craft.Bridge.csproj"/></ItemGroup></Project>

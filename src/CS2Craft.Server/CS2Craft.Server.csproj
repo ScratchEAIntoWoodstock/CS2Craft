@@ -1,0 +1,1 @@
+<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies></PropertyGroup><ItemGroup><ProjectReference Include="../CS2Craft.Bridge/CS2Craft.Bridge.csproj" /><PackageReference Include="CounterStrikeSharp.API" Version="1.0.376" /></ItemGroup></Project>

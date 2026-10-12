@@ -1,0 +1,13 @@
+upstream/
+.tools/
+.cache/
+runtime/
+dist/
+**/bin/
+**/obj/
+**/.gradle/
+**/build/
+**/run/
+*.user
+*.log
+__pycache__/
