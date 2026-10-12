@@ -63,6 +63,12 @@ public final class InputBridge {
 			}
 			case Proto.IN_RELEASE_ALL -> releaseAll();
 			case Proto.IN_HURT -> hurt(minecraft, code, a / 100.0F, b, c);
+			case Proto.IN_ROUND_RESET -> {
+				var server = minecraft.getSingleplayerServer();
+				if (server != null) {
+					server.execute(() -> server.getAllLevels().forEach(dev.skycraft.world.RoundReset::clear));
+				}
+			}
 			case Proto.IN_OPEN_MENU -> {
 				if (minecraft.gui.screen() == null && minecraft.player != null) {
 					releaseAll();

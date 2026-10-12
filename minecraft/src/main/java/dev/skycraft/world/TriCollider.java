@@ -21,6 +21,7 @@ public final class TriCollider {
 	private static final double SUBSTEP = 0.1;         // horizontal sub-steps so walls can't be tunnelled
 	private static final double AIR_STEP = 0.3;        // walkable surfaces this far above the feet catch you mid-air
 	private static final double EPS = 1e-4;
+	private static final double BODY_TOLERANCE = 0.01; // see blocksBody
 
 	private static final double[][] FLOOR_SAMPLES = buildSamples();
 
@@ -266,6 +267,32 @@ public final class TriCollider {
 			}
 		}
 		return new double[] { bx, bz };
+	}
+
+	/**
+	 * True if {@code t} overlaps a body standing with its feet at (x, y, z) under the same rules
+	 * {@link #resolve} uses: a vertical cylinder, walkable surfaces only from the step height
+	 * (below that they are ground), steeper ones from {@code wallFrom}. Ramps under the feet and
+	 * walls the player was just pushed out of therefore do not count; ceilings and real walls do.
+	 */
+	public static boolean blocksBody(SkyTri t, double x, double y, double z, double radius, double height, double wallFrom, double step) {
+		if (t.stairHelper) {
+			return false;
+		}
+		// Contact exactly at the step height or at the cylinder surface is where movement leaves the
+		// player, so it must not count as overlap.
+		double lo = y + (t.walkable ? step : wallFrom) + BODY_TOLERANCE;
+		double hi = y + height - 0.02;
+		if (t.maxY < lo || t.minY > hi || t.maxX < x - radius || t.minX > x + radius || t.maxZ < z - radius || t.minZ > z + radius) {
+			return false;
+		}
+		double[] poly = new double[3 * 6];
+		int n = clipToSlab(t, lo, hi, poly);
+		if (n == 0) {
+			return false;
+		}
+		double[] closest = closestXZ(poly, n, x, z);
+		return Math.hypot(x - closest[0], z - closest[1]) < radius - BODY_TOLERANCE;
 	}
 
 	/** Highest surface at or below {@code maxAbove} over the feet at (x, y, z), or NaN. */

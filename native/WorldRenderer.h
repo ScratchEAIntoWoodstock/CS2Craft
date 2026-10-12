@@ -13,7 +13,7 @@
 class WorldRenderer {
 public:
     struct Camera { double x{},y{},z{}; float yaw{},pitch{},verticalFov{73.7398f}; };
-    struct Stats { uint64_t accepted{},rejected{},draws{},meshBytes{},textureBytes{}; };
+    struct Stats { uint64_t accepted{},rejected{},draws{},meshBytes{},textureBytes{},occluderBytes{}; };
     HRESULT Initialize(ID3D11Device* device);
     void Reset();
     void Clear();
@@ -24,6 +24,7 @@ public:
               const DirectX::XMFLOAT3& avatarFeet,bool showAvatar);
     Stats GetStats() const {return stats;}
     size_t Sections() const {return sections.size();}
+    size_t Occluders() const {return occluders.size();}
 private:
     using Key=std::tuple<int,int,int>;
     template<class T> using Com=Microsoft::WRL::ComPtr<T>;
@@ -34,11 +35,13 @@ private:
         uint32_t vertices{};
     };
     struct Texture {Com<ID3D11Texture2D> texture;Com<ID3D11ShaderResourceView> view;UINT w{},h{};};
+    // Depth-only host geometry: positions in absolute Minecraft space, 12 bytes per vertex.
+    struct OccluderMesh {Com<ID3D11Buffer> buffer;uint32_t vertices{};};
     Com<ID3D11Device> device;
     Com<ID3D11DeviceContext> context;
-    Com<ID3D11VertexShader> vs;
+    Com<ID3D11VertexShader> vs,depthVs;
     Com<ID3D11PixelShader> ps;
-    Com<ID3D11InputLayout> layout;
+    Com<ID3D11InputLayout> layout,depthLayout;
     Com<ID3D11Buffer> constants;
     Com<ID3D11SamplerState> sampler;
     Com<ID3D11BlendState> alpha,opaque,depthOnly;
@@ -47,7 +50,8 @@ private:
     Com<ID3D11Texture2D> depthTexture;
     Com<ID3D11DepthStencilView> depthView;
     UINT depthW{},depthH{};
-    std::map<Key,Mesh> sections,occluders;
+    std::map<Key,Mesh> sections;
+    std::map<Key,OccluderMesh> occluders;
     std::map<uint32_t,Texture> textures;
     Mesh avatar,scene;
     Stats stats;

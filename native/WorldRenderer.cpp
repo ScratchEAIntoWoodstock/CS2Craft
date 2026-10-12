@@ -7,7 +7,7 @@
 using namespace DirectX;
 namespace p=skycraft::proto;
 namespace {
-constexpr uint64_t meshLimit=128ull<<20,textureLimit=256ull<<20;
+constexpr uint64_t meshLimit=128ull<<20,textureLimit=256ull<<20,occluderLimit=256ull<<20;
 constexpr uint32_t vertexLimit=1u<<20;
 constexpr char shader[]=R"(
 cbuffer Params:register(b0){row_major float4x4 viewProjection;float4 origin;}
@@ -21,6 +21,7 @@ Vertex VS(Input i){
     float shade=face==1?0.5:face==2?1:face==3||face==4?0.8:face==5||face==6?0.6:1;
     o.color=float4(i.color.rgb*saturate(light)*shade,i.color.a);return o;
 }
+float4 VSDepth(float3 p:POSITION):SV_Position{return mul(float4(p+origin.xyz,1),viewProjection);}
 float4 PS(Vertex i):SV_Target{
     float4 value=image.Sample(pointSampler,i.uv)*i.color;
     clip(value.a-((i.flags&1)!=0?0.1:0.003));
@@ -47,6 +48,11 @@ HRESULT WorldRenderer::Initialize(ID3D11Device* d){
         {"LIGHT",0,DXGI_FORMAT_R32_UINT,0,24,D3D11_INPUT_PER_VERTEX_DATA,0},
         {"FLAGS",0,DXGI_FORMAT_R32_UINT,0,28,D3D11_INPUT_PER_VERTEX_DATA,0}};
     if(FAILED(hr=device->CreateInputLayout(elements,static_cast<UINT>(std::size(elements)),vb->GetBufferPointer(),vb->GetBufferSize(),&layout)))return hr;
+    Com<ID3DBlob> db;errors.Reset();
+    if(FAILED(hr=D3DCompile(shader,sizeof(shader)-1,"CS2Craft world",nullptr,nullptr,"VSDepth","vs_5_0",D3DCOMPILE_OPTIMIZATION_LEVEL3,0,&db,&errors)))return hr;
+    if(FAILED(hr=device->CreateVertexShader(db->GetBufferPointer(),db->GetBufferSize(),nullptr,&depthVs)))return hr;
+    const D3D11_INPUT_ELEMENT_DESC position[]={{"POSITION",0,DXGI_FORMAT_R32G32B32_FLOAT,0,0,D3D11_INPUT_PER_VERTEX_DATA,0}};
+    if(FAILED(hr=device->CreateInputLayout(position,1,db->GetBufferPointer(),db->GetBufferSize(),&depthLayout)))return hr;
     D3D11_BUFFER_DESC cb{};cb.ByteWidth=sizeof(Params);cb.Usage=D3D11_USAGE_DEFAULT;cb.BindFlags=D3D11_BIND_CONSTANT_BUFFER;
     if(FAILED(hr=device->CreateBuffer(&cb,nullptr,&constants)))return hr;
     D3D11_SAMPLER_DESC sd{};sd.Filter=D3D11_FILTER_MIN_MAG_MIP_POINT;
@@ -72,11 +78,11 @@ void WorldRenderer::Clear(){
     for(auto& [key,m]:sections)DropMesh(m);sections.clear();
     DropMesh(avatar);DropMesh(scene);textures.clear();stats.textureBytes=0;
 }
-void WorldRenderer::ClearOccluders(){for(auto& [key,m]:occluders)DropMesh(m);occluders.clear();}
+void WorldRenderer::ClearOccluders(){occluders.clear();stats.occluderBytes=0;}
 void WorldRenderer::Reset(){
     Clear();ClearOccluders();depthView.Reset();depthTexture.Reset();depthW=depthH=0;
     raster.Reset();readDepth.Reset();writeDepth.Reset();depthOnly.Reset();opaque.Reset();alpha.Reset();
-    sampler.Reset();constants.Reset();layout.Reset();ps.Reset();vs.Reset();context.Reset();device.Reset();stats={};
+    sampler.Reset();constants.Reset();depthLayout.Reset();layout.Reset();ps.Reset();depthVs.Reset();vs.Reset();context.Reset();device.Reset();stats={};
 }
 bool WorldRenderer::UploadMesh(Mesh& out,const p::RenVertex* vertices,uint32_t count,std::vector<p::RenBatch> batches,XMFLOAT3 origin){
     if(!finite(origin)||count>vertexLimit||count%3)return false;
@@ -181,14 +187,17 @@ bool WorldRenderer::Consume(uint32_t type,const uint8_t* data,size_t bytes){
 bool WorldRenderer::Occluder(int x,int y,int z,const float* xyz,uint32_t count){
     if(!device||count>393216||count%3||(!xyz&&count))return false;
     Key key{x,y,z};auto it=occluders.find(key);
-    if(!count){if(it!=occluders.end()){DropMesh(it->second);occluders.erase(it);}return true;}
-    if(it==occluders.end()&&occluders.size()>=128)return false;
-    std::vector<p::RenVertex> vertices(count);
-    for(uint32_t i=0;i<count;i++)vertices[i]={xyz[i*3],xyz[i*3+1],xyz[i*3+2],0,0,0xffffffff,0xf0f,0};
-    auto& destination=occluders[key];
-    bool ok=UploadMesh(destination,vertices.data(),count,{{0,0,count,0}},{});
-    if(!ok&&destination.vertices==0)occluders.erase(key);
-    return ok;
+    const uint64_t previous=it==occluders.end()?0:uint64_t(it->second.vertices)*12;
+    if(!count){if(it!=occluders.end()){stats.occluderBytes-=previous;occluders.erase(it);}return true;}
+    const uint64_t bytes=uint64_t(count)*12;
+    if(stats.occluderBytes-previous+bytes>occluderLimit)return false;
+    for(uint32_t i=0;i<count*3;i++)if(!std::isfinite(xyz[i])||std::abs(xyz[i])>1e6f)return false;
+    OccluderMesh mesh;mesh.vertices=count;
+    D3D11_BUFFER_DESC bd{};bd.ByteWidth=static_cast<UINT>(bytes);bd.Usage=D3D11_USAGE_IMMUTABLE;bd.BindFlags=D3D11_BIND_VERTEX_BUFFER;
+    D3D11_SUBRESOURCE_DATA initial{xyz,0,0};
+    if(FAILED(device->CreateBuffer(&bd,&initial,&mesh.buffer)))return false;
+    occluders[key]=std::move(mesh);stats.occluderBytes=stats.occluderBytes-previous+bytes;
+    return true;
 }
 bool WorldRenderer::Draw(ID3D11RenderTargetView* target,UINT w,UINT h,const Camera& camera,const XMFLOAT3& feet,bool showAvatar){
     if(!device||!w||!h||w>8192||h>8192||!std::isfinite(camera.x)||!std::isfinite(camera.y)||!std::isfinite(camera.z)
@@ -224,8 +233,18 @@ bool WorldRenderer::Draw(ID3D11RenderTargetView* target,UINT w,UINT h,const Came
         context->UpdateSubresource(constants.Get(),0,nullptr,&params,0,0);
     };
     context->OMSetBlendState(depthOnly.Get(),blendFactor,0xffffffff);context->OMSetDepthStencilState(writeDepth.Get(),0);
-    context->PSSetShader(nullptr,nullptr,0);
-    for(auto& [key,m]:occluders)if(m.vertices){bind(m,m.origin);context->Draw(m.vertices,0);stats.draws++;}
+    if(!occluders.empty()){
+        // Host map geometry fills depth first so Minecraft geometry behind walls is rejected.
+        params.origin={float(-camera.x),float(-camera.y),float(-camera.z),0};
+        context->UpdateSubresource(constants.Get(),0,nullptr,&params,0,0);
+        context->IASetInputLayout(depthLayout.Get());context->VSSetShader(depthVs.Get(),nullptr,0);context->PSSetShader(nullptr,nullptr,0);
+        UINT stride=12,offset=0;
+        for(auto& [key,m]:occluders){
+            auto buffer=m.buffer.Get();context->IASetVertexBuffers(0,1,&buffer,&stride,&offset);
+            context->Draw(m.vertices,0);stats.draws++;
+        }
+        context->IASetInputLayout(layout.Get());context->VSSetShader(vs.Get(),nullptr,0);
+    }
     context->PSSetShader(ps.Get(),nullptr,0);
     for(int pass=0;pass<2;pass++){
         context->OMSetBlendState(pass?alpha.Get():opaque.Get(),blendFactor,0xffffffff);

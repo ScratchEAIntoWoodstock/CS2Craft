@@ -204,6 +204,11 @@ public final class SkyCombat {
 		float damage = skyrimDamage / SKYRIM_TO_MC_DAMAGE;
 		float healthBefore = player.getHealth();
 		boolean blocking = player.isBlocking();
+		if (kind == Proto.HURT_PROJECTILE) {
+			// CS2 guns fire far faster than Minecraft's 0.5 s damage immunity; the host already
+			// cancelled the CS2 damage, so every bullet has to land here or it is simply lost.
+			player.setInvulnerableTime(0);
+		}
 		boolean hurt = player.hurtServer(level, source, damage);
         if (attacker != null) SkyCraft.LOG.info("CS2Craft damage direction: player={} attacker={} velocity={}",player.position(),attacker.position(),player.getDeltaMovement());
 		trainDefence(player, damage, blocking && player.getHealth() >= healthBefore - 1.0E-3F);

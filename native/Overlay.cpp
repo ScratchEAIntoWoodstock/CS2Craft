@@ -194,17 +194,20 @@ void drawWorld(ID3D11RenderTargetView* targetView,UINT w,UINT h){
     const uint64_t mcBeat=load64(0x18),now=GetTickCount64();
     if(!mcBeat || now<mcBeat || now-mcBeat>3000)return;
     if(geometryDirty){
-        world.ClearOccluders();
-        if(occlusionEnabled)for(auto& [key,vertices]:hostGeometry)
-            world.Occluder(std::get<0>(key),std::get<1>(key),std::get<2>(key),vertices.data(),static_cast<uint32_t>(vertices.size()/3));
-        geometryDirty=false;geometryChanges.clear();
-    } else if(occlusionEnabled) {
-        for(const auto& key:geometryChanges){
-            auto it=hostGeometry.find(key);
-            if(it==hostGeometry.end())world.Occluder(std::get<0>(key),std::get<1>(key),std::get<2>(key),nullptr,0);
-            else world.Occluder(std::get<0>(key),std::get<1>(key),std::get<2>(key),it->second.data(),static_cast<uint32_t>(it->second.size()/3));
+        // Device re-creation or an occlusion toggle: rebuild every region from the retained host copy.
+        world.ClearOccluders();geometryChanges.clear();
+        if(occlusionEnabled)for(auto& [key,vertices]:hostGeometry)geometryChanges.insert(key);
+        geometryDirty=false;
+    }
+    if(occlusionEnabled){
+        // Whole-map occlusion arrives as many regions; spread GPU uploads to avoid a frame hitch.
+        int uploads=0;
+        for(auto it=geometryChanges.begin();it!=geometryChanges.end()&&uploads<64;uploads++){
+            auto key=*it;it=geometryChanges.erase(it);
+            auto found=hostGeometry.find(key);
+            if(found==hostGeometry.end())world.Occluder(std::get<0>(key),std::get<1>(key),std::get<2>(key),nullptr,0);
+            else world.Occluder(std::get<0>(key),std::get<1>(key),std::get<2>(key),found->second.data(),static_cast<uint32_t>(found->second.size()/3));
         }
-        geometryChanges.clear();
     }
     // Camera entity snapshot shared with CS2; final client render interpolation can still differ.
     ComPtr<ID3DDeviceContextState> previous;
@@ -332,28 +335,26 @@ extern "C" __declspec(dllexport) void CS2Craft_SetCamera(double x,double y,doubl
     bool active=(flags&1)!=0;
     bool occlusion=(flags&2)!=0;
     if(occlusion!=occlusionEnabled){occlusionEnabled=occlusion;geometryDirty=true;}
-    if(!active){sceneEnabled=false;hostGeometry.clear();geometryChanges.clear();world.ClearOccluders();return;}
+    // Pausing the scene (death, menus) keeps occluders; CS2Craft_ClearOccluders drops them on detach.
+    if(!active){sceneEnabled=false;return;}
     if(!std::isfinite(x)||!std::isfinite(y)||!std::isfinite(z)||!std::isfinite(yaw)||!std::isfinite(pitch)
        ||!std::isfinite(verticalFov)||verticalFov<5||verticalFov>170)return;
     camera={x,y,z,yaw,std::clamp(pitch,-89.9f,89.9f),verticalFov};cameraTime=GetTickCount64();sceneEnabled=true;
 }
 extern "C" __declspec(dllexport) void CS2Craft_SetOccluder(int x,int y,int z,const float* vertices,uint32_t count){
     std::scoped_lock lock(mutex);
-    if(!sceneEnabled||count>393216||count%3||(!vertices&&count))return;
+    // Accepted while the scene is paused too: the host streams the whole map once per attach.
+    if(count>393216||count%3||(!vertices&&count))return;
     auto key=std::make_tuple(x,y,z);
     if(!count){hostGeometry.erase(key);geometryChanges.insert(key);return;}
     for(uint32_t i=0;i<count*3;i++)if(!std::isfinite(vertices[i]))return;
-    // Keep at most 128 regions, evicting the farthest sampled region when roaming.
-    if(!hostGeometry.contains(key)&&hostGeometry.size()>=128){
-        auto farthest=hostGeometry.begin();double maximum=-1;
-        for(auto it=hostGeometry.begin();it!=hostGeometry.end();++it){
-            auto [rx,ry,rz]=it->first;double dx=rx*8.0+4-camera.x,dy=ry*8.0+4-camera.y,dz=rz*8.0+4-camera.z;
-            double distance=dx*dx+dy*dy+dz*dz;if(distance>maximum){maximum=distance;farthest=it;}
-        }
-        geometryChanges.insert(farthest->first);hostGeometry.erase(farthest);
-    }
     hostGeometry[key]=std::vector<float>(vertices,vertices+count*3);geometryChanges.insert(key);
 }
+extern "C" __declspec(dllexport) void CS2Craft_ClearOccluders(){
+    std::scoped_lock lock(mutex);
+    hostGeometry.clear();geometryChanges.clear();world.ClearOccluders();
+}
+extern "C" __declspec(dllexport) uint64_t CS2Craft_OccluderRegions(){std::scoped_lock lock(mutex);return world.Occluders();}
 extern "C" __declspec(dllexport) uint64_t CS2Craft_WorldFrames(){std::scoped_lock lock(mutex);return worldFrames;}
 extern "C" __declspec(dllexport) uint64_t CS2Craft_WorldSections(){std::scoped_lock lock(mutex);return world.Sections();}
 extern "C" __declspec(dllexport) uint64_t CS2Craft_RejectedPackets(){std::scoped_lock lock(mutex);return world.GetStats().rejected;}

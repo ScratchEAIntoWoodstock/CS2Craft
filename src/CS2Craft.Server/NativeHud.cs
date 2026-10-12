@@ -46,7 +46,10 @@ internal sealed class NativeHud
     }
     CameraDelegate? camera;
     OccluderDelegate? occluder;
-    CountDelegate? worldFrames,sections,rejected;
+    CountDelegate? worldFrames,sections,rejected,occluderRegions;
+    StopDelegate? clearOccluders;
+    public ulong OccluderRegions => occluderRegions?.Invoke() ?? 0;
+    public void ClearOccluders() => clearOccluders?.Invoke();
     nint module;
     StopDelegate? stop;
     CountDelegate? frames;
@@ -74,6 +77,8 @@ internal sealed class NativeHud
         frames = Marshal.GetDelegateForFunctionPointer<CountDelegate>(NativeLibrary.GetExport(module,"CS2Craft_OverlayFrames"));
         camera = Marshal.GetDelegateForFunctionPointer<CameraDelegate>(NativeLibrary.GetExport(module,"CS2Craft_SetCamera"));
         occluder = Marshal.GetDelegateForFunctionPointer<OccluderDelegate>(NativeLibrary.GetExport(module,"CS2Craft_SetOccluder"));
+        clearOccluders = Marshal.GetDelegateForFunctionPointer<StopDelegate>(NativeLibrary.GetExport(module,"CS2Craft_ClearOccluders"));
+        occluderRegions = Marshal.GetDelegateForFunctionPointer<CountDelegate>(NativeLibrary.GetExport(module,"CS2Craft_OccluderRegions"));
         worldFrames = Marshal.GetDelegateForFunctionPointer<CountDelegate>(NativeLibrary.GetExport(module,"CS2Craft_WorldFrames"));
         sections = Marshal.GetDelegateForFunctionPointer<CountDelegate>(NativeLibrary.GetExport(module,"CS2Craft_WorldSections"));
         rejected = Marshal.GetDelegateForFunctionPointer<CountDelegate>(NativeLibrary.GetExport(module,"CS2Craft_RejectedPackets"));
@@ -91,7 +96,7 @@ internal sealed class NativeHud
     }
     public void Stop()
     {
-        stop?.Invoke(); stop=null; avatar=null; inputStats=null; frames=null; camera=null; occluder=null; worldFrames=null; sections=null; rejected=null;capture=null;captureStatus=null;inputMode=null;cursor=null;look=null;testMouse=null;poll=null;
+        stop?.Invoke(); stop=null; avatar=null; inputStats=null; frames=null; camera=null; occluder=null; clearOccluders=null; occluderRegions=null; worldFrames=null; sections=null; rejected=null;capture=null;captureStatus=null;inputMode=null;cursor=null;look=null;testMouse=null;poll=null;
         // Keep the native module resident until process exit: an in-flight Present may still be returning.
         // CS2Craft_Stop unhooks and releases all resources. A hot reload can start it again.
         Status="stopped";

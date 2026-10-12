@@ -80,6 +80,18 @@ public final class SkyCollision {
 		}
 	}
 
+    /**
+     * Triangles that overlap a body occupying {@code box} (feet at its bottom) under the movement
+     * collider's rules, so pose and server movement checks agree with how the player actually moves.
+     */
+    public static java.util.List<SkyTri> bodyBlockers(net.minecraft.world.phys.AABB box, double step, double wallFrom) {
+        java.util.List<SkyTri> triangles=new java.util.ArrayList<>();
+        trianglesNear(box,triangles);
+        double x=(box.minX+box.maxX)*.5,z=(box.minZ+box.maxZ)*.5,radius=box.getXsize()*.5,height=box.getYsize();
+        triangles.removeIf(t->!TriCollider.blocksBody(t,x,box.minY,z,radius,height,wallFrom,step));
+        return triangles;
+    }
+
     public static boolean intersects(net.minecraft.world.phys.AABB box) {
         java.util.List<SkyTri> triangles=new java.util.ArrayList<>();
         trianglesNear(box,triangles);

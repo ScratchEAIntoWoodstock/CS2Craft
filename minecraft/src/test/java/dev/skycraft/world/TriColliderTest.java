@@ -202,4 +202,48 @@ class TriColliderTest {
 		double[] m = TriCollider.resolve(t, 0, 0, 0, R, H, STEP, true, 0, 0.42, 0);
 		assertEquals(0.2, m[1], 1e-6);
 	}
+
+	private static boolean bodyBlocked(List<SkyTri> tris, double[] feet, double height) {
+		for (SkyTri t : tris) {
+			if (TriCollider.blocksBody(t, feet[0], feet[1], feet[2], R, height, STEP, STEP)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/** Regression: a box test counted the slope under the feet, forcing a crouch/crawl pose on ramps. */
+	@Test
+	void bodyFitIgnoresTheRampUnderfoot() {
+		List<SkyTri> t = new ArrayList<>();
+		flat(t, -5, -5, 0, 5, 0);
+		ramp(t, 0, 6, -5, 5, 0, 35);
+		List<double[]> path = simulate(t, -1, 0, 0, 0.2, GRAVITY_TICK, 0, 30);
+		assertTrue(path.getLast()[1] > 2, "walked up the ramp");
+		for (double[] p : path) {
+			assertTrue(!bodyBlocked(t, p, H), "standing fits at " + p[0]);
+			assertTrue(!bodyBlocked(t, p, 1.5), "crouching fits at " + p[0]);
+		}
+	}
+
+	@Test
+	void bodyFitStillSeesALowCeiling() {
+		List<SkyTri> t = new ArrayList<>();
+		flat(t, -5, -5, 5, 5, 0);
+		flat(t, -5, -5, 5, 5, 1.6);
+		double[] feet = { 0, 0, 0 };
+		assertTrue(bodyBlocked(t, feet, H), "standing is blocked");
+		assertTrue(!bodyBlocked(t, feet, 1.5), "crouching fits");
+	}
+
+	@Test
+	void bodyFitToleratesTheWallItWasPushedOutOf() {
+		List<SkyTri> t = new ArrayList<>();
+		flat(t, -5, -5, 5, 5, 0);
+		wallX(t, 1, -5, 5, 0, 3);
+		List<double[]> path = simulate(t, 0, 0, 0, 0.2, GRAVITY_TICK, 0, 10);
+		assertEquals(1 - R, path.getLast()[0], 0.02);
+		assertTrue(!bodyBlocked(t, path.getLast(), H));
+		assertTrue(bodyBlocked(t, new double[] { 1 - R + 0.05, 0, 0 }, H), "real overlap still counts");
+	}
 }

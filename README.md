@@ -36,7 +36,7 @@ Controls: WASD, mouse look, left-click attack/mine, right-click use/place, 1–9
 
 Mouse look now uses native relative input independently of the CS2 character camera. Client and integrated-server movement share exact triangle collision; hidden CS2 weapons are locked against firing. The inventory uses a virtual cursor while CS2 retains its mouse capture. Native mouse/text/wheel routing is implemented; physical desktop-input acceptance still needs manual testing. The automated inventory test verifies bridge cursor/click handling, not real mouse hardware.
 
-To stop Minecraft control, use `css_cs2craft_detach` or close this CS2 session. Death/respawn and pause/menu transitions are still rough. If a previous Minecraft instance holds the mapping, let it finish saving before relaunching.
+To stop Minecraft control, use `css_cs2craft_detach` or close this CS2 session. Dying keeps you linked: you respawn after `RespawnDelaySeconds` (default 3) and gameplay resumes. Placed blocks are cleared at every round start (`ClearBlocksEachRound`). Pause/menu transitions are still rough. If a previous Minecraft instance holds the mapping, let it finish saving before relaunching.
 
 ## What works and what remains
 

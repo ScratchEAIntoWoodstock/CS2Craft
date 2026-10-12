@@ -18,6 +18,8 @@ public static class Protocol
     public const int InputCapacity = 4096, EventCapacity = 512, MaxActors = 256;
     public const uint HostInGame = 1, HostMenu = 2, HostLoading = 4;
     public const uint McInWorld = 1, McScreen = 2, McDead = 32;
+    // CS2Craft extension input event: a CS2 round started; Minecraft removes all placed blocks.
+    public const ushort InputRoundReset = 64;
     public static int Align8(int size) => checked((size + 7) & ~7);
 }
 

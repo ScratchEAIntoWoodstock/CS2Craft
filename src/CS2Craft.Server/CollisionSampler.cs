@@ -8,7 +8,6 @@ internal sealed class CollisionSampler
 {
     readonly SharedBridge bridge;
     readonly uint epoch;
-    readonly Action<int,int,int,IReadOnlyList<Triangle>>? completed;
     readonly Task<MapGeometry> loading;
     readonly HashSet<(int X,int Y,int Z)> done=new();
     Task<(List<Triangle> Triangles,List<CollisionBlock> Blocks)>? preparing;
@@ -16,9 +15,11 @@ internal sealed class CollisionSampler
     byte[]? trisPacket,blocksPacket;
     bool trisSent;
     public int Completed=>done.Count;
-    public CollisionSampler(SharedBridge bridge,uint epoch,string path,Action<int,int,int,IReadOnlyList<Triangle>>? completed=null)
+    /// <summary>The map's exact triangles, also used for the renderer's occlusion (OccluderFeed).</summary>
+    public Task<MapGeometry> Map=>loading;
+    public CollisionSampler(SharedBridge bridge,uint epoch,string path)
     {
-        this.bridge=bridge;this.epoch=epoch;this.completed=completed;
+        this.bridge=bridge;this.epoch=epoch;
         loading=Task.Run(()=>MapGeometry.Load(path));
     }
     public (int Compared,int Missing,double MaxErrorUnits) VerifyFloors(Point center,CCSPlayerPawn pawn)
@@ -81,7 +82,6 @@ internal sealed class CollisionSampler
             blocksPacket??=CollisionRegion.Blocks(region.X,region.Y,region.Z,epoch,data.Blocks);
             if(!trisSent){if(!bridge.PushCollision(3,trisPacket))return;trisSent=true;}
             if(!bridge.PushCollision(2,blocksPacket))return;
-            completed?.Invoke(region.X,region.Y,region.Z,data.Triangles.Where(t=>(t.Flags&2)==0).ToArray());
             done.Add(region);preparing=null;
         }
     }

@@ -3,15 +3,22 @@ package dev.skycraft.mixin;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import dev.skycraft.world.SkyCollision;
+import dev.skycraft.world.SkyTri;
+import java.util.List;
 import net.minecraft.core.BlockPos;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.BlockCollisions;
 import net.minecraft.world.level.CollisionGetter;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.shapes.CollisionContext;
 import net.minecraft.world.phys.shapes.EntityCollisionContext;
 import net.minecraft.world.phys.shapes.Shapes;
 import net.minecraft.world.phys.shapes.VoxelShape;
+import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Shadow;
+import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 
 /**
@@ -20,8 +27,9 @@ import org.spongepowered.asm.mixin.injection.At;
  */
 @Mixin(BlockCollisions.class)
 public abstract class BlockCollisionsMixin {
-    @org.spongepowered.asm.mixin.Shadow @org.spongepowered.asm.mixin.Final
-    private net.minecraft.world.phys.AABB box;
+	@Shadow @Final private AABB box;
+	@Unique private List<SkyTri> cs2craft$bodyBlockers;
+
 	@WrapOperation(
 		method = "computeNext",
 		at = @At(
@@ -40,16 +48,39 @@ public abstract class BlockCollisionsMixin {
 		if (sky == null) {
 			return blockShape;
 		}
-        if (context instanceof EntityCollisionContext ec && SkyCollision.exactEntity(ec.getEntity())) {
-            var bounds=box.deflate(1e-4);
-            // Footprint corners may touch a slope slightly above the capsule's support point.
-            // Ignore that contact only for body-fit queries; edge probes below the feet still see it.
-            var entity=ec.getEntity();
-            if(entity!=null && bounds.minY>=entity.getY()-.01)
-                bounds=bounds.setMinY(Math.max(bounds.minY,entity.getY()+.05));
-            var query=bounds.intersect(new net.minecraft.world.phys.AABB(pos));
-            if(!SkyCollision.intersects(query))return blockShape;
-        }
-        return blockShape.isEmpty() ? sky : Shapes.or(blockShape, sky);
+		if (context instanceof EntityCollisionContext ec && SkyCollision.exactEntity(ec.getEntity()) && !cs2craft$exactOverlap(ec.getEntity(), pos)) {
+			return blockShape;
+		}
+		return blockShape.isEmpty() ? sky : Shapes.or(blockShape, sky);
+	}
+
+	/**
+	 * Whether the exact-collision entity's query actually touches map triangles in this cell.
+	 * Body-sized queries (pose fit, the server's movement validation) use the movement collider's
+	 * cylinder/step rules; a plain box test would count the slope under the feet and force a
+	 * crouch/crawl pose or a server rubber-band on every ramp. Probes at or below the feet
+	 * (support, edge and fall checks) keep exact triangle overlap.
+	 */
+	@Unique
+	private boolean cs2craft$exactOverlap(Entity entity, BlockPos pos) {
+		AABB cell = new AABB(pos);
+		if (box.getYsize() >= 0.5 && box.maxY > entity.getY() + 0.3) {
+			if (cs2craft$bodyBlockers == null) {
+				double step = entity.maxUpStep();
+				cs2craft$bodyBlockers = SkyCollision.bodyBlockers(box, step, entity.onGround() ? step : 0.02);
+			}
+			if (cs2craft$bodyBlockers.isEmpty() || !box.intersects(cell)) {
+				return false;
+			}
+			AABB query = box.intersect(cell);
+			for (SkyTri t : cs2craft$bodyBlockers) {
+				if (t.intersects(query.minX, query.minY, query.minZ, query.maxX, query.maxY, query.maxZ)) {
+					return true;
+				}
+			}
+			return false;
+		}
+		AABB bounds = box.deflate(1e-4);
+		return bounds.intersects(cell) && SkyCollision.intersects(bounds.intersect(cell));
 	}
 }
