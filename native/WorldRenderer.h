@@ -20,6 +20,8 @@ public:
     bool Packet(uint32_t type,const void* payload,size_t bytes);
     bool Occluder(int x,int y,int z,const float* xyz,uint32_t vertexCount);
     void ClearOccluders();
+    // Moving host shapes (players, bots, doors) in absolute Minecraft space, replaced every host tick.
+    bool MovingOccluders(const float* xyz,uint32_t vertexCount);
     // Per-frame Minecraft things drawn without meshes: arrows, dropped items/blocks, mining cracks,
     // and the targeted-block outline (selection = min xyz, max xyz, or null).
     void SetWorldEntities(const skycraft::proto::WorldEntity* entities,uint32_t count,const float* selection);
@@ -62,6 +64,10 @@ private:
     uint32_t cutoutVertices{},crackVertices{},lineVertices{},dynamicCapacity{};
     bool dynamicDirty{};
     Com<ID3D11Buffer> dynamicBuffer;
+    std::vector<float> movingVertices;
+    uint32_t movingCapacity{};
+    bool movingDirty{};
+    Com<ID3D11Buffer> movingBuffer;
     Stats stats;
     bool UploadMesh(Mesh& destination,const skycraft::proto::RenVertex* vertices,uint32_t count,
                     std::vector<skycraft::proto::RenBatch> batches,DirectX::XMFLOAT3 origin);
@@ -69,4 +75,5 @@ private:
     void DropMesh(Mesh& mesh);
     bool Consume(uint32_t type,const uint8_t* payload,size_t bytes);
     bool UploadDynamic();
+    bool UploadMoving();
 };

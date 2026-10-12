@@ -189,6 +189,8 @@ public final class SkyLink {
 		public int teleportSeq;
 		public int viewportW, viewportH;
 		public float gameHour;
+		public int money;
+		public float buySeconds, roundSeconds;
 
 		public boolean inGame() {
 			return (this.flags & SKY_IN_GAME) != 0;
@@ -204,6 +206,11 @@ public final class SkyLink {
 
 		public boolean autoSprint() {
 			return (this.flags & SKY_AUTO_SPRINT) != 0;
+		}
+
+		/** CS2 lets the player buy right now: in a buy zone with buy time left. */
+		public boolean canBuy() {
+			return (this.flags & SKY_BUY_ZONE) != 0 && this.buySeconds > 0.0F;
 		}
 	}
 
@@ -274,6 +281,9 @@ public final class SkyLink {
 			out.viewportW = s.get(JAVA_INT, b + SS_VIEWPORT_W);
 			out.viewportH = s.get(JAVA_INT, b + SS_VIEWPORT_H);
 			out.gameHour = s.get(JAVA_FLOAT, b + SS_GAME_HOUR);
+			out.money = s.get(JAVA_INT, b + SS_MONEY);
+			out.buySeconds = s.get(JAVA_FLOAT, b + SS_BUY_SECONDS);
+			out.roundSeconds = s.get(JAVA_FLOAT, b + SS_ROUND_SECONDS);
 			VarHandle.loadLoadFence();
 			int seq2 = (int) INT.getAcquire(s, b + SS_SEQ);
 			if (seq1 == seq2) {

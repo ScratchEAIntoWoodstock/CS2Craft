@@ -37,6 +37,20 @@ Check(bridge.Read<float>(Protocol.Water+16)==-1e30f && bridge.Read<float>(Protoc
 var host = new HostState(1, 77, 4, new(-12,7,3), -90, 20, 12);
 bridge.Publish(host);
 Check(bridge.Read<double>(Protocol.Host+16)==-12 && bridge.Read<uint>(Protocol.Host+48)==12 && (bridge.Atomic32(Protocol.Host)&1)==0,"host seqlock layout");
+bridge.Publish(host with { Flags = 1 | Protocol.HostBuyZone, Money = 4750, BuySeconds = 12.5f, RoundSeconds = 101 });
+Check(bridge.Read<int>(Protocol.Host+64)==4750 && bridge.Read<float>(Protocol.Host+68)==12.5f && bridge.Read<float>(Protocol.Host+72)==101
+    && (bridge.Read<uint>(Protocol.Host+4)&Protocol.HostBuyZone)!=0,"money, buy time and round time layout");
+Throws<ArgumentException>(() => bridge.Publish(host with { BuySeconds = float.NaN }), "non-finite buy time rejected");
+var shapes = new List<float>();
+MovingShapes.Person(shapes, new(400, -800, 0), 90, 64);
+var ys = Enumerable.Range(0, shapes.Count / 3).Select(i => shapes[i * 3 + 1]).ToList();
+var xs = Enumerable.Range(0, shapes.Count / 3).Select(i => shapes[i * 3]).ToList();
+Check(shapes.Count == 4 * 36 * 3 && Math.Abs(ys.Min()) < 1e-4 && Math.Abs(ys.Max() - 70 / 40f) < 1e-4
+    && xs.Min() > 10 - 9.1 / 40 && xs.Max() < 10 + 9.1 / 40, "person occluder: 4 boxes, feet to head top, slim silhouette");
+shapes.Clear(); MovingShapes.Person(shapes, new(0, 0, 0), 0, 46);
+Check(Math.Abs(Enumerable.Range(0, shapes.Count / 3).Max(i => shapes[i * 3 + 1]) - 70 / 40f * 46 / 64) < 1e-4, "crouching person is shorter");
+shapes.Clear(); MovingShapes.Box(shapes, new(double.NaN, 0, 0), 0, 1, 1, 1);
+Check(shapes.Count == 0, "non-finite moving shape skipped");
 bridge.Write(Protocol.Player+4, 1u);
 bridge.Write(Protocol.Player+8, 17d); bridge.Write(Protocol.Player+16, 23d); bridge.Write(Protocol.Player+24, -4d);
 bridge.Write(Protocol.Player+48, 12u); bridge.Atomic32(Protocol.Player, 2);

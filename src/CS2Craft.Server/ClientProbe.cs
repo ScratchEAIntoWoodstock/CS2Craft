@@ -34,7 +34,7 @@ public sealed partial class CS2CraftPlugin
     int probeTargetHealth;
     bool probeSelected,probePressed,probeReleased,probeCapture,probeFinished,probeTurned;
     // Extended live checks: sprint, bow, block colliders, round restart.
-    const double ProbeEnd=100;
+    const double ProbeEnd=112;
     // Unmeasured values stay NaN; write them as "NaN" instead of failing the whole report.
     static readonly JsonSerializerOptions ProbeJson=new(){WriteIndented=true,NumberHandling=System.Text.Json.Serialization.JsonNumberHandling.AllowNamedFloatingPointLiterals};
     static readonly JsonSerializerOptions ProbeJsonLine=new(){NumberHandling=System.Text.Json.Serialization.JsonNumberHandling.AllowNamedFloatingPointLiterals};
@@ -46,6 +46,11 @@ public sealed partial class CS2CraftPlugin
     CCSPlayerPawn? probePushBot;
     bool probeExplosion,probeExplosionSpawned,probeExplosionCapture,probeSwordMeasured,probeSprintPress,probeSprintRelease,probeSprintForward;
     int probeSwordHealthAfter=-1;
+    // Buy menu: B opens Minecraft's menu, a purchase is charged in CS2 money; moving occluders follow bots.
+    bool probeMoneySet,probeBuyKey,probeBuyClose,probeBuyCapture,probeBuyMenuOpened,probeBuyMenuClosed,probeChat,probeChatTyped,probeChatSent,probeBuyMeasured;
+    int probeMoneyBefore=-1,probeMoneyAfter=-1,probeMovingVertices;
+    bool probeKill;
+    int probeKillMoneyBefore=-1,probeKillMoneyAfter=-1,probeKillScoreBefore=-1,probeKillScoreAfter=-1;
     string probeNotes="";
     void ProbeBeforeAttach()
     {
@@ -73,7 +78,7 @@ public sealed partial class CS2CraftPlugin
                 target.MoveType=target.ActualMoveType=MoveType_t.MOVETYPE_NONE;
                 target.Teleport(new Vector(origin.X,origin.Y+120,origin.Z),null,new Vector(0,0,0));
                 look.Reset(-180,8);
-                bridge.PushInput(new(1,32,1));bridge.PushInput(new(1,32,0)); // hotbar 3: bow
+                bridge.PushInput(new(1,31,1));bridge.PushInput(new(1,31,0)); // hotbar 2: bow
                 probeBowHealthBefore=target.Health;
             }
             else probeNotes+="bow: no live target; ";
@@ -83,6 +88,18 @@ public sealed partial class CS2CraftPlugin
         if(seconds>68.3&&probeBowRelease&&!probeBowCapture){hud.Capture(Path.Combine(ModuleDirectory,"client-bow.tga"));probeBowCapture=true;}
         if(seconds>69.5&&probeBowRelease&&!probeBowMeasured)
         {probeBowHealthAfter=probeTarget?.IsValid==true&&probeTarget.Health>0?probeTarget.Health:0;probeBowMeasured=true;}
+        // Kill reward: the bow target finished by a Minecraft melee hit, through the real event handler.
+        if(seconds>70&&probeBowMeasured&&!probeKill&&owner is {IsValid:true} killer)
+        {
+            probeKill=true;
+            if(probeTarget is {IsValid:true} victim&&victim.Health>0&&actors.ContainsKey(victim.EntityHandle.Raw))
+            {
+                probeKillMoneyBefore=Economy.Money(killer);probeKillScoreBefore=killer.Score;
+                HandleEvent(new(1,victim.EntityHandle.Raw,500,0,0,0,0,0),pawn);
+                probeKillMoneyAfter=Economy.Money(killer);probeKillScoreAfter=killer.Score;
+            }
+            else probeNotes+="kill: no live mirrored target; ";
+        }
         // CS2-side TNT effect: the same handler a Minecraft explosion event runs, four blocks ahead.
         if(seconds>70.5&&!probeExplosion)
         {
@@ -101,7 +118,8 @@ public sealed partial class CS2CraftPlugin
                 probeColliderBlock=block;
                 var c=Coordinates.ToSource(new(block.X+0.5,block.Y+0.5,block.Z+0.5));
                 var hit=Trace.TraceEndShape(new((float)c.X-80,(float)c.Y,(float)c.Z),new((float)c.X+80,(float)c.Y,(float)c.Z),pawn,new(){InteractsWith=Masks.Shot});
-                probeColliderHit=hit.DidHit()&&hit.HitEntity().Index==prop.Index;
+                // Any block collider counts: the ray may first meet a neighbouring placed block.
+                probeColliderHit=hit.DidHit()&&colliders.Owns(hit.HitEntity().Index);
                 probeColliderHitOffset=hit.EndPos.X-c.X;
                 // The bow target may be dead by now; any living bot will do.
                 probePushBot=Utilities.GetPlayers().Where(p=>p.IsValid&&p.IsBot&&p.PawnIsAlive)
@@ -130,6 +148,25 @@ public sealed partial class CS2CraftPlugin
         if(seconds>91&&probeRestartMeasured&&!probeSprintPress){bridge.PushInput(new(1,26,1));probeSprintPress=true;}
         if(probeSprintPress&&!probeSprintRelease&&(mc.Flags&16)!=0)probeSprintForward=true;
         if(seconds>93.5&&probeSprintPress&&!probeSprintRelease){bridge.PushInput(new(1,26,0));probeSprintRelease=true;}
+        // Buy menu: B opens it (and is kept from CS2), B closes it, then "/cs2buy Iron Armor" spends $1000 of CS2 money.
+        if(seconds>95&&!probeMoneySet&&owner is {IsValid:true} buyer)
+        {
+            probeMoneySet=true;
+            GameServer.ExecuteCommand("mp_buy_anywhere 1;mp_buytime 9999");
+            Economy.AddMoney(buyer,16000-Economy.Money(buyer));probeMoneyBefore=Economy.Money(buyer);
+        }
+        if(seconds>96&&probeMoneySet&&!probeBuyKey){bridge.PushInput(new(1,5,1));bridge.PushInput(new(1,5,0));probeBuyKey=true;}
+        if(seconds>97&&probeBuyKey&&(mc.Flags&Protocol.McScreen)!=0)probeBuyMenuOpened=true;
+        if(seconds>97.5&&probeBuyMenuOpened&&!probeBuyCapture){hud.Capture(Path.Combine(ModuleDirectory,"client-buymenu.tga"));probeBuyCapture=true;}
+        if(seconds>98.5&&probeBuyKey&&!probeBuyClose){bridge.PushInput(new(1,5,1));bridge.PushInput(new(1,5,0));probeBuyClose=true;}
+        if(seconds>99.5&&probeBuyClose&&!probeChat){probeBuyMenuClosed=(mc.Flags&Protocol.McScreen)==0;bridge.PushInput(new(1,23,1));bridge.PushInput(new(1,23,0));probeChat=true;}
+        if(seconds>100.5&&probeChat&&!probeChatTyped)
+        {
+            foreach(char ch in "/cs2buy Iron Armor")bridge.PushInput(new(5,0,ch));
+            probeChatTyped=true;
+        }
+        if(seconds>101.5&&probeChatTyped&&!probeChatSent){bridge.PushInput(new(1,40,1));bridge.PushInput(new(1,40,0));probeChatSent=true;}
+        if(seconds>104&&probeChatSent&&!probeBuyMeasured&&owner is {IsValid:true} paid){probeBuyMeasured=true;probeMoneyAfter=Economy.Money(paid);}
     }
     void ProbeConnected(CCSPlayerPawn pawn)
     {
@@ -137,6 +174,7 @@ public sealed partial class CS2CraftPlugin
         if(probeReady==0)probeReady=Environment.TickCount64;
         double seconds=(Environment.TickCount64-probeReady)/1000.0;
         if(probeMove&&!probeStop&&(mc.Flags&16)!=0)probeSprintSeen=true; // MC_SPRINTING during the strafe walk
+        probeMovingVertices=Math.Max(probeMovingVertices,movingShapes.Count/3);
         // Sword damage right after the hit; later steps (bow, round restart) change the bot's health.
         if(seconds>29&&probeHitRelease&&!probeSwordMeasured){probeSwordMeasured=true;probeSwordHealthAfter=probeTarget?.IsValid==true?probeTarget.Health:-1;}
 
@@ -145,7 +183,7 @@ public sealed partial class CS2CraftPlugin
             pawn.Teleport(null,new QAngle(35,0,0),null);probeTurned=true;
             Logger.LogInformation("CS2Craft client probe camera: origin={Origin}, viewOffset={Eye}, renderer={Renderer}",host.Position,pawn.ViewOffset.Z,hud.Status);
         }
-        if(seconds>5&&!probeSelected){bridge.PushInput(new(1,34,1));bridge.PushInput(new(1,34,0));probeSelected=true;}
+        if(seconds>5&&!probeSelected){bridge.PushInput(new(1,33,1));bridge.PushInput(new(1,33,0));probeSelected=true;} // hotbar 4: planks
         if(seconds>7&&!probePressed){bridge.PushInput(new(2,3,1));probePressed=true;}
         if(seconds>7.25&&!probeReleased){bridge.PushInput(new(2,3,0));probeReleased=true;}
         if(seconds>12&&!probeCapture&&hud.Frames>30)
@@ -251,7 +289,11 @@ public sealed partial class CS2CraftPlugin
                 colliderTraceHit=probeColliderHit,colliderHitOffsetUnits=probeColliderHitOffset,
                 botPushBlocked=probePushBlocked,botPushEndX=probePushEndX,botPushLimitX=probePushLimitX,
                 collidersAfterRound=probeCollidersAfterRound,drivingAfterRound=probeDrivingAfterRound,
-                worldEntityFrames=hud.WorldFrames,notes=probeNotes};
+                worldEntityFrames=hud.WorldFrames,
+                movingOccluderVertices=probeMovingVertices,buyMenuOpened=probeBuyMenuOpened,buyMenuClosed=probeBuyMenuClosed,
+                moneyBeforeBuy=probeMoneyBefore,moneyAfterBuy=probeMoneyAfter,
+                killMoneyBefore=probeKillMoneyBefore,killMoneyAfter=probeKillMoneyAfter,killScoreBefore=probeKillScoreBefore,killScoreAfter=probeKillScoreAfter,
+                notes=probeNotes};
             File.WriteAllText(Path.Combine(ModuleDirectory,"client-gameplay.json"),JsonSerializer.Serialize(gameplay,ProbeJson));
             Logger.LogInformation("CS2Craft gameplay probe complete: {Result}",JsonSerializer.Serialize(gameplay,ProbeJsonLine));
             probeGameplayFinished=true;

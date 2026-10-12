@@ -27,6 +27,8 @@ internal sealed class BlockColliders
         foreach (var (key, value) in props) if (value.IsValid) { block = key; prop = value; return true; }
         block = default; prop = null!; return false;
     }
+    /// <summary>Whether the entity is one of the block colliders.</summary>
+    public bool Owns(uint index) => props.Values.Any(p => p.IsValid && p.Index == index);
     public void Tick(NativeHud hud)
     {
         for (int i = 0; i < 64 && hud.PollSolids(out int sx, out int sy, out int sz, bits); i++)

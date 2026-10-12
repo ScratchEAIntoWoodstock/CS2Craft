@@ -41,6 +41,9 @@ bool sceneEnabled{},occlusionEnabled{},showAvatar{};
 DirectX::XMFLOAT3 avatarFeet{};
 std::map<std::tuple<int,int,int>,std::vector<float>> hostGeometry;
 bool geometryDirty{};
+// Players, bots and doors as depth-only triangles, replaced by the host every tick.
+std::vector<float> movingGeometry;
+bool movingChanged{};
 std::set<std::tuple<int,int,int>> geometryChanges;
 // Minecraft's solid blocks per 16^3 section (kRenSolids, bit x+16z+256y), for CS2 bot collision.
 // Kept outside WorldRenderer so a D3D device reset cannot drop them; the host polls changes.
@@ -145,7 +148,7 @@ HRESULT initialize(ID3D11Device* d){
     if(FAILED(hr=device->CreateSamplerState(&sd,&sampler)))return hr;
     D3D11_BUFFER_DESC cb{};cb.ByteWidth=16;cb.Usage=D3D11_USAGE_DEFAULT;cb.BindFlags=D3D11_BIND_CONSTANT_BUFFER;
     if(FAILED(hr=device->CreateBuffer(&cb,nullptr,&constants)))return hr;
-    geometryDirty=true;return world.Initialize(device.Get());
+    geometryDirty=movingChanged=true;return world.Initialize(device.Get());
 }
 void resetGraphics(){
     world.Reset();
@@ -240,6 +243,11 @@ void drawWorld(ID3D11RenderTargetView* targetView,UINT w,UINT h){
             if(found==hostGeometry.end())world.Occluder(std::get<0>(key),std::get<1>(key),std::get<2>(key),nullptr,0);
             else world.Occluder(std::get<0>(key),std::get<1>(key),std::get<2>(key),found->second.data(),static_cast<uint32_t>(found->second.size()/3));
         }
+    }
+    if(movingChanged||geometryDirty){
+        const bool use=occlusionEnabled&&!movingGeometry.empty();
+        world.MovingOccluders(use?movingGeometry.data():nullptr,use?static_cast<uint32_t>(movingGeometry.size()/3):0);
+        movingChanged=false;
     }
     // Camera entity snapshot shared with CS2; final client render interpolation can still differ.
     ComPtr<ID3DDeviceContextState> previous;
@@ -388,7 +396,14 @@ extern "C" __declspec(dllexport) void CS2Craft_SetOccluder(int x,int y,int z,con
 }
 extern "C" __declspec(dllexport) void CS2Craft_ClearOccluders(){
     std::scoped_lock lock(mutex);
-    hostGeometry.clear();geometryChanges.clear();world.ClearOccluders();
+    hostGeometry.clear();geometryChanges.clear();movingGeometry.clear();movingChanged=true;world.ClearOccluders();
+}
+// Replaces the moving occluders (CS2 players and doors): absolute Minecraft-space triangles.
+extern "C" __declspec(dllexport) void CS2Craft_SetMovingOccluders(const float* vertices,uint32_t count){
+    std::scoped_lock lock(mutex);
+    if(count>65536||count%3||(!vertices&&count))return;
+    for(uint32_t i=0;i<count*3;i++)if(!std::isfinite(vertices[i]))return;
+    movingGeometry.assign(vertices,vertices+size_t(count)*3);movingChanged=true;
 }
 extern "C" __declspec(dllexport) uint64_t CS2Craft_OccluderRegions(){std::scoped_lock lock(mutex);return world.Occluders();}
 extern "C" __declspec(dllexport) int CS2Craft_BackbufferSize(int* width,int* height){
@@ -420,6 +435,7 @@ extern "C" __declspec(dllexport) void CS2Craft_RequestCapture(const wchar_t* pat
 extern "C" __declspec(dllexport) int CS2Craft_CaptureStatus(){std::scoped_lock lock(mutex);return captureStatus;}
 
 extern "C" __declspec(dllexport) void CS2Craft_InputMode(int active,int gui,int width,int height){InputRouter::Mode(active!=0,gui!=0,width,height);}
+extern "C" __declspec(dllexport) void CS2Craft_BlockKey(int vk){InputRouter::BlockKey(vk);}
 extern "C" __declspec(dllexport) int CS2Craft_Cursor(int* x,int* y){return x&&y&&InputRouter::Cursor(*x,*y)?1:0;}
 extern "C" __declspec(dllexport) int CS2Craft_PollInput(p::InputEvent* event){return event&&InputRouter::Pop(*event)?1:0;}
 

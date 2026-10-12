@@ -1,3 +1,31 @@
+# Live probe: buy menu, CS2 economy, person occlusion, default kit — 2026-10-12
+
+The client probe now runs to 112 s. The default kit changed the hotbar (1 stone sword, 2 bow, 3 arrows, 4 planks, 5 beef), so the probe places planks from slot 4 and draws the bow from slot 2. New steps:
+- at 70 s, finish the bow target through the real hit handler (kill reward and scoreboard);
+- at 95 s, set money to the maximum, with `mp_buy_anywhere 1` and a long `mp_buytime`;
+- press B (open), capture, press B (close);
+- type `/cs2buy Iron Armor` in Minecraft chat.
+
+Final run (07:02, `CS2Craft-LiveTest-0712`):
+
+| Check | Result |
+|---|---|
+| Stone sword (default kit) | 20 (100 → 80) |
+| Bow | 48 by projectile (80 → 32) |
+| Kill from Minecraft | Money 1000 → 1750: CS2Craft's $600 melee reward plus $150 that CS2 itself pays in this game mode when the bot dies. Score 0 → 2 |
+| Buy menu | B opened it (`McScreen` set) and B closed it; `client-buymenu.tga` shows the panel over CS2 with money, the warmup notice, icons and greyed offers with reasons |
+| Purchase | `/cs2buy Iron Armor`: plugin charged $1000 (10000 → 9000, `mp_maxmoney` 10000 here); the Minecraft log shows "bought Iron Armor for $1000" |
+| Round restart | Minecraft log: "round start ... (default kit)"; 0 colliders afterwards, `drivingAfterRound` true |
+| Person occluders | 1296 vertices = 9 people × 144. In `client-bow.tga` the bot stands in front of the placed planks and his body and hand cover them |
+| Colliders | `colliderTraceHit` true (the check now accepts any block collider); the launched bot stopped short of the block (`botPushBlocked`, x 280 < 320) |
+| Other | `maxFloorErrorUnits` 7.4, `sprintForward` true, `explosionSpawned` true |
+
+The first run (06:58) gave the same buy, menu and occluder results. Its trace check failed only because of the old same-entity rule.
+
+**Offline.** Native WARP tests 26–28 cover moving occluders: hiding, clearing and NaN rejection. The bridge has 45 checks, including the money/buy-time/round-time layout, non-finite buy time and the person shape bounds. The 29 Minecraft tests and the C# build pass.
+
+**Not verified live.** The probe sends B through the bridge, so a physical B press reaching CS2's own buy menu was not tested; the window-procedure block is in place. Also not exercised: throwing an ender pearl, potions, TNT ignition, the shield against bot fire, kept gear across a normal round end, the CS2-death default-kit path (input 67) and doors as occluders (no doors near the probe position).
+
 # Live probe: TNT effects, durability, HUD feedback, auto HUD size — 2026-10-11
 
 The client probe (`Start-CS2.ps1 -ClientProbe` with a fresh Minecraft save) now runs to 100 s. After the original checks it adds:

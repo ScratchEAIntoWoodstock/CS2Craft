@@ -48,6 +48,19 @@ internal sealed class NativeHud
         return pollSolids is not null && bits.Length==64 && pollSolids(out x,out y,out z,bits)==1;
     }
     public void ResendSolids() => resendSolids?.Invoke();
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] delegate void KeyDelegate(int vk);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] delegate void MovingDelegate([In] float[] vertices,uint count);
+    KeyDelegate? blockKey;
+    MovingDelegate? moving;
+    int blocked=-1;
+    /// <summary>Hide one virtual key from CS2 while Minecraft plays (CS2's buy menu key); 0 = none.</summary>
+    public void BlockKey(int vk){if(vk==blocked)return;blocked=vk;blockKey?.Invoke(vk);}
+    /// <summary>Players and doors as Minecraft-space triangles (x,y,z floats); replaces the previous set.</summary>
+    public void MovingOccluders(List<float> vertices)
+    {
+        if(moving is null||vertices.Count%9!=0||vertices.Count/3>65536)return;
+        moving(vertices.ToArray(),(uint)(vertices.Count/3));
+    }
     CursorDelegate? backbufferSize;
     /// <summary>CS2's swap-chain size once the renderer has presented a linked frame.</summary>
     public bool BackbufferSize(out int width,out int height){width=height=0;return backbufferSize?.Invoke(out width,out height)==1;}
@@ -107,12 +120,15 @@ internal sealed class NativeHud
         pollSolids=Marshal.GetDelegateForFunctionPointer<PollSolidsDelegate>(NativeLibrary.GetExport(module,"CS2Craft_PollSolids"));
         resendSolids=Marshal.GetDelegateForFunctionPointer<StopDelegate>(NativeLibrary.GetExport(module,"CS2Craft_ResendSolids"));
         backbufferSize=Marshal.GetDelegateForFunctionPointer<CursorDelegate>(NativeLibrary.GetExport(module,"CS2Craft_BackbufferSize"));
+        blockKey=Marshal.GetDelegateForFunctionPointer<KeyDelegate>(NativeLibrary.GetExport(module,"CS2Craft_BlockKey"));
+        moving=Marshal.GetDelegateForFunctionPointer<MovingDelegate>(NativeLibrary.GetExport(module,"CS2Craft_SetMovingOccluders"));
         int result = start();
         Status = result == 0 ? "hook installed (DX11)" : result == 1 ? "skipped (dedicated or secure process)" : $"start failed ({result})";
     }
     public void Stop()
     {
-        stop?.Invoke(); stop=null; avatar=null; inputStats=null; pollSolids=null; resendSolids=null; backbufferSize=null; frames=null; camera=null; occluder=null; clearOccluders=null; occluderRegions=null; worldFrames=null; sections=null; rejected=null;capture=null;captureStatus=null;inputMode=null;cursor=null;look=null;testMouse=null;poll=null;
+        blockKey?.Invoke(0); blocked=-1;
+        stop?.Invoke(); stop=null; avatar=null; blockKey=null; moving=null; inputStats=null; pollSolids=null; resendSolids=null; backbufferSize=null; frames=null; camera=null; occluder=null; clearOccluders=null; occluderRegions=null; worldFrames=null; sections=null; rejected=null;capture=null;captureStatus=null;inputMode=null;cursor=null;look=null;testMouse=null;poll=null;
         // Keep the native module resident until process exit: an in-flight Present may still be returning.
         // CS2Craft_Stop unhooks and releases all resources. A hot reload can start it again.
         Status="stopped";

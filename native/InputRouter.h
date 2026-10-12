@@ -9,6 +9,8 @@ int InstallHooks();
 int EnableHooks(bool enable);
 void Stats(uint64_t& window,uint64_t& hooked,int& status);
 void Mode(bool active,bool gui,int width,int height);
+// A key CS2 must not see while Minecraft plays (its buy menu key; Minecraft opens its own). 0 = none.
+void BlockKey(int vk);
 bool Look(int& x,int& y);
 int SelfTest();
 void TestMouse(int x,int y);

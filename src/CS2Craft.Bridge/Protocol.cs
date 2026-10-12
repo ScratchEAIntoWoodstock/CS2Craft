@@ -19,11 +19,20 @@ public static class Protocol
     public const uint HostInGame = 1, HostMenu = 2, HostLoading = 4;
     // CS2Craft extension: Minecraft holds sprint while moving (CS2 runs faster than Minecraft walks).
     public const uint HostAutoSprint = 1u << 16;
+    // CS2Craft extension: the pawn stands in a buy zone (HostState.BuySeconds says whether buy time is left).
+    public const uint HostBuyZone = 1u << 17;
     public const uint McInWorld = 1, McScreen = 2, McDead = 32;
     // CS2Craft extension input event: a CS2 round started; Minecraft removes all placed blocks.
     public const ushort InputRoundReset = 64;
     // CS2Craft extension input event: code 1 = killed, A = actor id, B = health left, C = damage dealt.
     public const ushort InputHitFeedback = 65;
+    // CS2Craft extension input event: answer to EventBuy. code 1 = bought, A = offer, B = money left, C = reason (Buy*).
+    public const ushort InputBuyResult = 66;
+    // CS2Craft extension input event: the pawn died in CS2 (not in Minecraft); Minecraft drops back to the default kit.
+    public const ushort InputLoadoutDefault = 67;
+    // CS2Craft extension game event: Minecraft's buy menu asks for an offer. Weapon = offer, A = price (CS2 dollars).
+    public const uint EventBuy = 64;
+    public const int BuyOk = 0, BuyNoMoney = 1, BuyNotInZone = 2, BuyTimeOver = 3, BuyNotPlaying = 4;
     public static int Align8(int size) => checked((size + 7) & ~7);
 }
 
@@ -42,7 +51,9 @@ public static class Coordinates
 }
 
 public readonly record struct HostState(uint Flags, uint WorldId, uint Epoch, Point Position,
-    float Yaw, float Pitch, uint Teleport, uint Width = 1280, uint Height = 720);
+    float Yaw, float Pitch, uint Teleport, uint Width = 1280, uint Height = 720,
+    // CS2Craft extension (Minecraft's HUD and buy menu): CS2 money, buy time and round time left in seconds.
+    int Money = 0, float BuySeconds = 0, float RoundSeconds = 0);
 public readonly record struct PlayerState(uint Flags, Point Position, float Yaw, float Pitch,
     float EyeHeight, uint TeleportAck, ulong Frame, float VerticalFov, uint CameraMode=0, float CameraDistance=0)
 {

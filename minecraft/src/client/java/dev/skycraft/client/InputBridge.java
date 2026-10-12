@@ -66,15 +66,28 @@ public final class InputBridge {
 			case Proto.IN_HIT_FEEDBACK -> hitFeedback(minecraft, code != 0, a, b, c);
 			case Proto.IN_ROUND_RESET -> {
 				var server = minecraft.getSingleplayerServer();
+				boolean clearBlocks = (code & Proto.ROUND_CLEAR_BLOCKS) != 0, freshGear = (code & Proto.ROUND_FRESH_GEAR) != 0;
 				if (server != null) {
 					server.execute(() -> {
-						server.getAllLevels().forEach(dev.skycraft.world.RoundReset::clear);
+						if (clearBlocks) {
+							server.getAllLevels().forEach(dev.skycraft.world.RoundReset::clear);
+						}
 						server.getPlayerList().getPlayers().forEach(player -> {
-							dev.skycraft.RoundLoadout.reset(player);
-							player.sendSystemMessage(net.minecraft.network.chat.Component.literal("New round: health, hunger and loadout restored")
+							dev.skycraft.RoundLoadout.roundStart(player, freshGear);
+							player.sendSystemMessage(net.minecraft.network.chat.Component.literal(freshGear
+									? "New round: default kit, full health. Press B to buy"
+									: "New round: full health, gear repaired. Press B to buy")
 								.withStyle(net.minecraft.ChatFormatting.GREEN), true);
 						});
 					});
+				}
+			}
+			case Proto.IN_LOADOUT_DEFAULT -> onServerPlayer(minecraft, dev.skycraft.RoundLoadout::giveDefaultKit);
+			case Proto.IN_BUY_RESULT -> {
+				BuyScreen.result(minecraft, code != 0, a, b, c);
+				var offer = dev.skycraft.shop.Shop.offer(a);
+				if (code != 0 && offer != null) {
+					onServerPlayer(minecraft, player -> dev.skycraft.shop.Shop.give(player, offer));
 				}
 			}
 			case Proto.IN_OPEN_MENU -> {
@@ -108,6 +121,21 @@ public final class InputBridge {
 			: net.minecraft.network.chat.Component.literal(name + "  " + health + " HP  (-" + damage + ")").withStyle(net.minecraft.ChatFormatting.YELLOW));
 		minecraft.getSoundManager().play(net.minecraft.client.resources.sounds.SimpleSoundInstance.forUI(
 			net.minecraft.sounds.SoundEvents.ARROW_HIT_PLAYER, killed ? 0.7F : 1.3F, 0.4F));
+	}
+
+	/** Runs {@code action} on the integrated server's copy of the local player. */
+	private static void onServerPlayer(Minecraft minecraft, java.util.function.Consumer<ServerPlayer> action) {
+		var server = minecraft.getSingleplayerServer();
+		if (server == null || minecraft.player == null) {
+			return;
+		}
+		var uuid = minecraft.player.getUUID();
+		server.execute(() -> {
+			ServerPlayer player = server.getPlayerList().getPlayer(uuid);
+			if (player != null) {
+				action.accept(player);
+			}
+		});
 	}
 
 	/** Skyrim hit the player: apply it as Minecraft damage on the integrated server (or the host's). */

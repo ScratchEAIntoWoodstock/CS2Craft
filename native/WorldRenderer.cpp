@@ -80,10 +80,10 @@ void WorldRenderer::Clear(){
     DropMesh(avatar);DropMesh(scene);textures.clear();stats.textureBytes=0;
     dynamicVertices.clear();cutoutVertices=crackVertices=lineVertices=0;dynamicDirty=false;
 }
-void WorldRenderer::ClearOccluders(){occluders.clear();stats.occluderBytes=0;}
+void WorldRenderer::ClearOccluders(){occluders.clear();stats.occluderBytes=0;movingVertices.clear();movingDirty=true;}
 void WorldRenderer::Reset(){
     Clear();ClearOccluders();depthView.Reset();depthTexture.Reset();depthW=depthH=0;
-    dynamicBuffer.Reset();dynamicCapacity=0;
+    dynamicBuffer.Reset();dynamicCapacity=0;movingBuffer.Reset();movingCapacity=0;
     raster.Reset();readDepth.Reset();writeDepth.Reset();depthOnly.Reset();opaque.Reset();alpha.Reset();
     sampler.Reset();constants.Reset();depthLayout.Reset();layout.Reset();ps.Reset();depthVs.Reset();vs.Reset();context.Reset();device.Reset();stats={};
 }
@@ -200,6 +200,31 @@ bool WorldRenderer::Occluder(int x,int y,int z,const float* xyz,uint32_t count){
     D3D11_SUBRESOURCE_DATA initial{xyz,0,0};
     if(FAILED(device->CreateBuffer(&bd,&initial,&mesh.buffer)))return false;
     occluders[key]=std::move(mesh);stats.occluderBytes=stats.occluderBytes-previous+bytes;
+    return true;
+}
+bool WorldRenderer::MovingOccluders(const float* xyz,uint32_t count){
+    if(count>65536||count%3||(!xyz&&count))return false;
+    for(uint32_t i=0;i<count*3;i++)if(!std::isfinite(xyz[i])||std::abs(xyz[i])>1e6f)return false;
+    movingVertices.assign(xyz,xyz+size_t(count)*3);movingDirty=true;
+    return true;
+}
+bool WorldRenderer::UploadMoving(){
+    if(!movingDirty)return !movingVertices.empty()&&movingBuffer;
+    movingDirty=false;
+    if(movingVertices.empty()||!device)return false;
+    const uint32_t bytes=static_cast<uint32_t>(movingVertices.size()*sizeof(float));
+    if(bytes>movingCapacity){
+        movingBuffer.Reset();movingCapacity=0;
+        const uint32_t capacity=std::max(bytes,64u*1024u);
+        D3D11_BUFFER_DESC bd{};bd.ByteWidth=capacity;bd.Usage=D3D11_USAGE_DYNAMIC;
+        bd.BindFlags=D3D11_BIND_VERTEX_BUFFER;bd.CPUAccessFlags=D3D11_CPU_ACCESS_WRITE;
+        if(FAILED(device->CreateBuffer(&bd,nullptr,&movingBuffer)))return false;
+        movingCapacity=capacity;
+    }
+    D3D11_MAPPED_SUBRESOURCE mapped{};
+    if(FAILED(context->Map(movingBuffer.Get(),0,D3D11_MAP_WRITE_DISCARD,0,&mapped)))return false;
+    memcpy(mapped.pData,movingVertices.data(),bytes);
+    context->Unmap(movingBuffer.Get(),0);
     return true;
 }
 namespace {
@@ -352,8 +377,9 @@ bool WorldRenderer::Draw(ID3D11RenderTargetView* target,UINT w,UINT h,const Came
         context->UpdateSubresource(constants.Get(),0,nullptr,&params,0,0);
     };
     context->OMSetBlendState(depthOnly.Get(),blendFactor,0xffffffff);context->OMSetDepthStencilState(writeDepth.Get(),0);
-    if(!occluders.empty()){
-        // Host map geometry fills depth first so Minecraft geometry behind walls is rejected.
+    const bool moving=UploadMoving();
+    if(!occluders.empty()||moving){
+        // Host map geometry, then players and doors, fill depth first so Minecraft geometry behind them is rejected.
         params.origin={float(-camera.x),float(-camera.y),float(-camera.z),0};
         context->UpdateSubresource(constants.Get(),0,nullptr,&params,0,0);
         context->IASetInputLayout(depthLayout.Get());context->VSSetShader(depthVs.Get(),nullptr,0);context->PSSetShader(nullptr,nullptr,0);
@@ -361,6 +387,10 @@ bool WorldRenderer::Draw(ID3D11RenderTargetView* target,UINT w,UINT h,const Came
         for(auto& [key,m]:occluders){
             auto buffer=m.buffer.Get();context->IASetVertexBuffers(0,1,&buffer,&stride,&offset);
             context->Draw(m.vertices,0);stats.draws++;
+        }
+        if(moving){
+            auto buffer=movingBuffer.Get();context->IASetVertexBuffers(0,1,&buffer,&stride,&offset);
+            context->Draw(static_cast<UINT>(movingVertices.size()/3),0);stats.draws++;
         }
         context->IASetInputLayout(layout.Get());context->VSSetShader(vs.Get(),nullptr,0);
     }

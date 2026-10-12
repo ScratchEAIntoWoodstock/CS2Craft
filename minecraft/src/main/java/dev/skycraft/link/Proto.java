@@ -45,6 +45,14 @@ public final class Proto {
 	// CS2Craft extension: a Minecraft hit landed on a CS2 bot. code 1 = killed, a = actor id,
 	// b = bot health left, c = damage dealt (CS2 health points).
 	public static final int IN_HIT_FEEDBACK = 65;
+	// CS2Craft extension: CS2's answer to EV_BUY. code 1 = bought, a = offer, b = money left, c = BUY_* reason.
+	public static final int IN_BUY_RESULT = 66;
+	// CS2Craft extension: the player died in CS2 (not through Minecraft); back to the default kit.
+	public static final int IN_LOADOUT_DEFAULT = 67;
+	// IN_ROUND_RESET code bits.
+	public static final int ROUND_CLEAR_BLOCKS = 1;
+	public static final int ROUND_FRESH_GEAR = 1 << 1;
+	public static final int BUY_OK = 0, BUY_NO_MONEY = 1, BUY_NOT_IN_ZONE = 2, BUY_TIME_OVER = 3, BUY_NOT_PLAYING = 4;
 	public static final int HURT_MELEE = 0;
 	public static final int HURT_PROJECTILE = 1;
 	public static final int HURT_MAGIC = 2;
@@ -74,6 +82,8 @@ public final class Proto {
 	public static final int EV_EXPLOSION = 3;
 	public static final int EV_ARROW_STUCK = 4;
 	public static final int EV_SKILL_USE = 5;
+	// CS2Craft extension: buy-menu purchase request. weapon = offer index, a = price in CS2 dollars.
+	public static final int EV_BUY = 64;
 	// Skyrim skills (ActorValue) Minecraft reports use of; weapon skills come from EV_HIT_ACTOR.
 	public static final int SKILL_BLOCK = 9;
 	public static final int SKILL_SMITHING = 10;
@@ -148,12 +158,18 @@ public final class Proto {
 	public static final long SS_VIEWPORT_W = 0x34;
 	public static final long SS_VIEWPORT_H = 0x38;
 	public static final long SS_GAME_HOUR = 0x3C;
+	// CS2Craft extension: CS2 money (int), buy time and round time left (float seconds).
+	public static final long SS_MONEY = 0x40;
+	public static final long SS_BUY_SECONDS = 0x44;
+	public static final long SS_ROUND_SECONDS = 0x48;
 
 	public static final int SKY_IN_GAME = 1;
 	public static final int SKY_MENU_OPEN = 1 << 1;
 	public static final int SKY_LOADING = 1 << 2;
 	// CS2Craft extension: hold the sprint key while moving (CS2's run speed exceeds Minecraft's walk).
 	public static final int SKY_AUTO_SPRINT = 1 << 16;
+	// CS2Craft extension: the CS2 pawn stands in a buy zone.
+	public static final int SKY_BUY_ZONE = 1 << 17;
 
 	// McState (relative to OFF_MC_STATE)
 	public static final long MS_SEQ = 0x00;

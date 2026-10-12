@@ -7,6 +7,7 @@
 namespace InputRouter {
 namespace {
 std::atomic<bool> active{},gui{};
+std::atomic<int> blockedKey{};
 std::atomic<WNDPROC> previous{};
 std::atomic<HWND> attached{};
 std::mutex inputMutex;
@@ -85,6 +86,11 @@ LRESULT CALLBACK procedure(HWND window,UINT message,WPARAM w,LPARAM l){
         case WM_MBUTTONDOWN:case WM_MBUTTONUP:return 0;
         default:break;
         }
+        // Minecraft reads keys with GetAsyncKeyState, so swallowing the message only hides it from CS2.
+        if(const int vk=blockedKey.load();vk&&!gui){
+            if((message==WM_KEYDOWN||message==WM_KEYUP||message==WM_SYSKEYDOWN||message==WM_SYSKEYUP)&&int(w)==vk)return 0;
+            if(message==WM_CHAR&&vk>='A'&&vk<='Z'&&(int(w)==vk||int(w)==vk+32))return 0;
+        }
         if(gui){
             if(message==WM_CHAR){
                 uint32_t ch=static_cast<uint32_t>(w);
@@ -149,6 +155,7 @@ void Mode(bool enable,bool screen,int w,int h){
     if(!enable||active!=enable||gui!=(enable&&screen))lookX=lookY=0;
     active=enable;gui=enable&&screen;
 }
+void BlockKey(int vk){blockedKey=vk>0&&vk<256?vk:0;}
 bool Cursor(int& x,int& y){
     std::scoped_lock lock(inputMutex);x=int(cursorX);y=int(cursorY);return active&&gui;
 }

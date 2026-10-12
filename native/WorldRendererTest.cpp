@@ -104,6 +104,10 @@ extern "C" __declspec(dllexport) int CS2Craft_WorldSelfTest(){
     if(!outlined)return 24; // 40% black line over the red sprite near the box's projected edge.
     if(!renderer.Occluder(0,0,0,wall,6)||(renderer.SetWorldEntities(&item,1,nullptr),draw())!=0xff000000)return 25; // Walls hide entities.
     renderer.ClearOccluders();
+    // A moving occluder (a CS2 player in front of a block) hides it; an empty update shows it again.
+    if(!renderer.MovingOccluders(wall,6)||(renderer.SetWorldEntities(&item,1,nullptr),draw())!=0xff000000)return 26;
+    if(!renderer.MovingOccluders(nullptr,0)||draw()!=0xff0000ff)return 27;
+    wall[0]=nan;if(renderer.MovingOccluders(wall,6))return 28;
     return 0;
 }
 // Replay a bounded real-Minecraft packet capture into an offscreen image. This is not a CS2 screenshot.

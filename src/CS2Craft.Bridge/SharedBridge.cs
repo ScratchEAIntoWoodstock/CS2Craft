@@ -59,7 +59,8 @@ public sealed unsafe class SharedBridge : IDisposable
     public void Publish(HostState state)
     {
         if (!state.Position.IsFinite || !float.IsFinite(state.Yaw) || !float.IsFinite(state.Pitch)
-            || state.Width is 0 or > Protocol.MaxWidth || state.Height is 0 or > Protocol.MaxHeight)
+            || state.Width is 0 or > Protocol.MaxWidth || state.Height is 0 or > Protocol.MaxHeight
+            || !float.IsFinite(state.BuySeconds) || !float.IsFinite(state.RoundSeconds))
             throw new ArgumentException("Invalid host state.");
         long o = Protocol.Host;
         uint seq = Begin(o);
@@ -67,6 +68,7 @@ public sealed unsafe class SharedBridge : IDisposable
         Write(o + 16, state.Position.X); Write(o + 24, state.Position.Y); Write(o + 32, state.Position.Z);
         Write(o + 40, state.Yaw); Write(o + 44, state.Pitch); Write(o + 48, state.Teleport);
         Write(o + 52, state.Width); Write(o + 56, state.Height); Write(o + 60, 12f);
+        Write(o + 64, state.Money); Write(o + 68, Math.Max(0, state.BuySeconds)); Write(o + 72, Math.Max(0, state.RoundSeconds));
         End(o, seq);
     }
     public bool TryReadPlayer(out PlayerState state)

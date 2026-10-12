@@ -29,6 +29,10 @@ public final class SkyCraftClient implements ClientModInitializer {
 			}));
 		});
 		ClientTickEvents.END_CLIENT_TICK.register(SkyClient::clientTick);
+		// CS2Craft: Minecraft's buy menu (B) and the CS2 money/round clock HUD.
+		BuyScreen.register();
+		ClientTickEvents.END_CLIENT_TICK.register(BuyScreen::tick);
+		CraftHud.register();
 		// Multiplayer testing on one PC: SKYCRAFT_LAN_PORT opens the world to LAN on that port as soon
 		// as it's loaded, and SKYCRAFT_LAN_OFFLINE lets offline (dev) clients join it.
 		net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents.JOIN.register((handler, sender, minecraft) -> {

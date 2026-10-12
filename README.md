@@ -34,11 +34,23 @@ Useful commands:
 
 Controls: WASD, mouse look, left-click attack/mine, right-click use/place, 1–9 or wheel for hotbar, E for inventory, Q to drop, F to swap hands, Space to jump, Shift to sneak. Moving forward sprints automatically, like running in CS2 (`AutoSprint`; Ctrl also sprints). Minecraft still needs more than three drumsticks of food to sprint. F5 cycles first person, behind Steve, and in front of Steve. Steve wears your equipped Minecraft armor.
 
-Every CS2 round start resets you: full health and hunger, no effects, and your round loadout back in the inventory, armor included. Your placed blocks, dropped items and arrows are removed. The loadout is the inventory you joined with (the starter kits on a new save). Type `/cs2craft loadout` in Minecraft chat (T) to make your current inventory the loadout. Arrows, dropped items, mining cracks and the targeted-block outline are drawn in CS2. Loadout items come back fully repaired.
+### Buying, rounds and the default kit
 
-Since CS2's HUD is hidden while you play, every hit on a bot shows in Minecraft's action bar with a hit sound: "Oli 70 HP (-30)" or "Killed Oli". Each new round also shows a notice there.
+Gear works like CS2. Every life starts with the default kit: a stone sword, a bow with 4 arrows, 16 oak planks and 4 cooked beef. Press **B** for Minecraft's buy menu (CS2's own buy menu is kept closed while you play). Items are paid with your **CS2 money**, under CS2's rules: only in a buy zone, only during buy time (`mp_buytime`), and kills on bots earn CS2 kill rewards ($600 melee or TNT, $300 bow, crossbow or trident; also counted on the scoreboard). `/cs2buy <name>` in Minecraft chat buys without the menu, for example `/cs2buy Iron Armor`.
 
-TNT works. Every player gets 16 TNT and a flint and steel once (they become part of the loadout). Light TNT with the flint and steel. A blast plays CS2's own HE-grenade explosion and sound, and walls shield bots and you from it. Blast damage to bots is Minecraft's ×2: about 115 point blank, falling off with distance.
+What you buy is kept while you survive, into the next round. Dying, a new match or the half resets you to the default kit. Every round start heals you fully, clears effects and repairs everything you carry; placed blocks, dropped items and arrows are removed. Natural health regeneration is off, as in CS2: heal with potions and golden apples. `/cs2craft loadout` makes your current inventory the default kit for the session (sandbox building); `/cs2craft loadout reset` undoes it.
+
+While you play, the Minecraft HUD shows what CS2's hidden HUD would: money (bottom left), the round clock (top) and a buy reminder during buy time. Every hit on a bot shows in the action bar with a hit sound ("Oli 70 HP (-30)" or "Killed Oli"). Advancement and recipe pop-ups are suppressed.
+
+| Category | Offers (CS2 $) |
+|---|---|
+| Melee | Stone sword 100, iron sword 400, diamond sword 1000, netherite sword 2200, iron axe 650, diamond axe 1400, netherite axe 2600, mace 3000 |
+| Ranged | Bow 300, 16 arrows 100 (carry 64), crossbow 900, trident 1800 |
+| Armor | Full sets: leather 300, chainmail 650, iron 1000, diamond 2500, netherite 3500; shield 1000; totem of undying 4000 |
+| Utility | Ender pearl 400 (carry 2), 2 TNT with flint and steel 500 (carry 6), splash healing II 400, golden apple 500, regeneration 700, strength 800, swiftness 300, leaping 200, slow falling 150, water bucket 200 |
+| Blocks | 32 planks 100, 32 cobblestone 150, 16 glass 100, 8 obsidian 600, 16 ladders 100, 8 cooked beef 50 |
+
+Balance notes. Bot gunfire is Minecraft damage (CS2 damage ÷ 5) that Minecraft armor reduces. Against an AK-47 body shot (36), iron takes 45% off (CS2 kevlar takes 22%), diamond 73% and netherite 74% with no knockback. A raised shield blocks bullets from the front but slows you. Ender pearls teleport you (and your CS2 player) and cost 25 HP. TNT plays CS2's own HE-grenade explosion and sound. Walls shield bots and you from it, and it does about 115 point blank, falling off with distance.
 
 Weapon damage to bots is in CS2 health (bots have 100) for a full-strength, non-critical hit:
 
@@ -63,12 +75,16 @@ Config (`addons/counterstrikesharp/configs/plugins/CS2Craft.Server/CS2Craft.Serv
 | Setting | Default | Effect |
 |---|---|---|
 | `RespawnDelaySeconds` | 3 | Respawn delay after a death; negative waits for CS2's own respawn |
-| `ClearBlocksEachRound` | true | Round-start reset of blocks, items, health and loadout |
+| `ClearBlocksEachRound` | true | Round-start removal of placed blocks, dropped items and arrows |
 | `AutoSprint` | true | Moving forward sprints |
 | `BotBlockCollision` | true | Placed blocks get invisible CS2 colliders (bots, players, bullets) |
 | `MaxBlockColliders` | 2048 | Collider limit |
 | `DamageMultiplier` | 1 | Scales Minecraft damage dealt to bots |
 | `Width` / `Height` | 0 / 0 | Minecraft HUD size; 0 follows CS2's window, so the HUD is crisp rather than stretched |
+| `BuyMenuKey` | 66 (B) | Virtual key hidden from CS2 while playing, so only Minecraft's buy menu opens; 0 disables |
+| `KillRewardMelee` / `KillRewardRanged` | 600 / 300 | CS2 money for a bot killed from Minecraft |
+| `KeepGearBetweenRounds` | true | Survivors keep bought gear; false resets everyone to the default kit every round |
+| `OccludePlayers` | true | Minecraft blocks behind CS2 players, bots and doors are hidden |
 
 Mouse look now uses native relative input independently of the CS2 character camera. Client and integrated-server movement share exact triangle collision; hidden CS2 weapons are locked against firing. The inventory uses a virtual cursor while CS2 retains its mouse capture. Native mouse/text/wheel routing is implemented; physical desktop-input acceptance still needs manual testing. The automated inventory test verifies bridge cursor/click handling, not real mouse hardware.
 
@@ -87,7 +103,7 @@ To stop Minecraft control, use `css_cs2craft_detach` or close this CS2 session. 
 | Diamond sword → real CS2 bot | Live probe reduced bot health from 100 to 65 |
 | Inventory slot interaction | Live CS2 capture confirms sword moved out of hotbar into inventory |
 | CS2 damage → Minecraft | Implemented; incoming bot-fire acceptance remains unverified |
-| Map collision / wall occlusion | Exact triangles from the installed map physics, including baked props; dynamic doors/props are not refreshed |
+| Map collision / wall occlusion | Exact triangles from the installed map physics, including baked props. Players, bots and doors occlude with approximate body/door boxes refreshed every tick; ragdolls and other moving props do not occlude |
 | Exact camera / depth / lighting | Dedicated camera entity follows Minecraft eye height and F5; separate depth buffer uses map physics |
 | Minecraft character in third person | Steve skin, animated body/equipment, F5 camera; underlying CS2 pawn remains for combat |
 | Placed blocks blocking CS2 bots | Invisible 40-unit crate collider per solid block; not yet live-verified. Bots do not path around them: the nav mesh is baked, so they walk into builds and use their own stuck/jump handling |

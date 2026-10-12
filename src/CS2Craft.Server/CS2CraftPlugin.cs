@@ -35,6 +35,17 @@ public sealed class CraftConfig : BasePluginConfig
     // Minecraft HUD size; 0 follows CS2's window so the HUD is drawn 1:1 instead of stretched.
     public int Width { get; set; } = 0;
     public int Height { get; set; } = 0;
+    // Minecraft has its own buy menu (paid with CS2 money); this virtual key is hidden from CS2 while playing
+    // so CS2's buy menu stays closed. 0x42 is B, CS2's default buy key. 0 lets CS2 see every key.
+    public int BuyMenuKey { get; set; } = 0x42;
+    // CS2 money for a bot killed from Minecraft: melee (swords, axes, TNT) and ranged (bow, crossbow, trident).
+    public int KillRewardMelee { get; set; } = 600;
+    public int KillRewardRanged { get; set; } = 300;
+    // Like CS2: surviving a round keeps what you bought; dying (or a new match/half) resets to the default kit.
+    // false resets everyone to the default kit every round.
+    public bool KeepGearBetweenRounds { get; set; } = true;
+    // Hide Minecraft blocks behind CS2 players, bots and doors (approximate body shapes).
+    public bool OccludePlayers { get; set; } = true;
 }
 
 [SupportedOSPlatform("windows")]
@@ -58,6 +69,10 @@ public sealed partial class CS2CraftPlugin : BasePlugin, IPluginConfig<CraftConf
     readonly NativeHud hud = new();
     readonly LocalPresentation presentation = new();
     readonly CraftCamera craftCamera = new();
+    readonly Economy economy = new();
+    readonly List<float> movingShapes = new();
+    List<CBaseModelEntity> doors = new();
+    float doorsFoundAt = -100;
     CollisionSampler? collision;
     OccluderFeed? occluders;
     BlockColliders? colliders;
@@ -84,8 +99,10 @@ public sealed partial class CS2CraftPlugin : BasePlugin, IPluginConfig<CraftConf
             && (config.Width < 320 || config.Width > Protocol.MaxWidth || config.Height < 200 || config.Height > Protocol.MaxHeight)
             || !float.IsFinite(config.DamageMultiplier) || config.DamageMultiplier <= 0 || config.DamageMultiplier > 10
             || !float.IsFinite(config.RespawnDelaySeconds) || config.RespawnDelaySeconds > 60
-            || config.MaxBlockColliders < 0 || config.MaxBlockColliders > 8192)
-            throw new ArgumentException("Invalid CS2Craft viewport, damage scale or respawn delay.");
+            || config.MaxBlockColliders < 0 || config.MaxBlockColliders > 8192
+            || config.BuyMenuKey < 0 || config.BuyMenuKey > 255
+            || config.KillRewardMelee < 0 || config.KillRewardMelee > 16000 || config.KillRewardRanged < 0 || config.KillRewardRanged > 16000)
+            throw new ArgumentException("Invalid CS2Craft viewport, damage scale, respawn delay, buy key or kill reward.");
         Config = config;
     }
     public override void Load(bool hotReload)
@@ -109,8 +126,22 @@ public sealed partial class CS2CraftPlugin : BasePlugin, IPluginConfig<CraftConf
             return HookResult.Continue;
         });
         RegisterEventHandler<EventRoundStart>((_,_)=>{
-            if(Config.ClearBlocksEachRound && owner is not null && bridge is not null && !bridge.PushInput(new(Protocol.InputRoundReset,0)))
-                Logger.LogWarning("CS2Craft: input ring full; this round's Minecraft block reset was skipped.");
+            doorsFoundAt=-100; // round restarts respawn map entities
+            if(owner is null || bridge is null)return HookResult.Continue;
+            // code bit 1: clear placed blocks; bit 2: everyone back to the default kit (new match or half, or no carry-over).
+            var rules=economy.Rules;
+            int played=rules?.TotalRoundsPlayed??0,maxRounds=(int)Economy.Cvar("mp_maxrounds",24);
+            bool freshGear=!Config.KeepGearBetweenRounds||played==0||rules?.WarmupPeriod==true
+                ||Economy.Cvar("mp_halftime",1)!=0&&maxRounds>1&&played==maxRounds/2;
+            ushort code=(ushort)((Config.ClearBlocksEachRound?1:0)|(freshGear?2:0));
+            if(!bridge.PushInput(new(Protocol.InputRoundReset,code)))
+                Logger.LogWarning("CS2Craft: input ring full; this round's Minecraft reset was skipped.");
+            return HookResult.Continue;
+        });
+        // Dying in CS2 (not through Minecraft's health) still loses what was bought, as in CS2.
+        RegisterEventHandler<EventPlayerDeath>((e,_)=>{
+            if(owner?.IsValid==true && bridge is not null && e.Userid?.EntityHandle.Raw==owner.EntityHandle.Raw)
+                bridge.PushInput(new(Protocol.InputLoadoutDefault,0));
             return HookResult.Continue;
         });
         // The block collider model belongs to another map; precache it for whichever map loads.
@@ -238,10 +269,13 @@ public sealed partial class CS2CraftPlugin : BasePlugin, IPluginConfig<CraftConf
             // Observe mode sends a teleport when the host moves; drive mode lets Minecraft own its position.
             var hostPosition = Coordinates.ToMinecraft(new(origin.X, origin.Y, origin.Z));
             if (!driving && DistanceSquared(hostPosition, host.Position) > 0.01) teleport++;
+            var (buyZone, buySeconds, roundSeconds) = economy.Window(pawn);
             host = host with { Position = hostPosition, Yaw = driving?look.Yaw:Coordinates.Yaw(pawn.EyeAngles.Y),
                 Pitch = driving?look.Pitch:pawn.EyeAngles.X, Teleport = teleport,
                 Width = (uint)ViewWidth, Height = (uint)ViewHeight,
-                Flags = Protocol.HostInGame | (driving && Config.AutoSprint ? Protocol.HostAutoSprint : 0) };
+                Flags = Protocol.HostInGame | (driving && Config.AutoSprint ? Protocol.HostAutoSprint : 0) | (buyZone ? Protocol.HostBuyZone : 0),
+                Money = Economy.Money(owner), BuySeconds = buySeconds, RoundSeconds = roundSeconds };
+            hud.BlockKey(driving ? Config.BuyMenuKey : 0);
 
             bridge.Publish(host);
             var viewOffset = pawn.ViewOffset;
@@ -261,6 +295,7 @@ public sealed partial class CS2CraftPlugin : BasePlugin, IPluginConfig<CraftConf
             collision?.Tick(hostPosition, pawn, 48);
             occluders?.Tick(hud, 8);
             colliders?.Tick(hud);
+            MovingOccluders(pawn);
             if (ready)
             {
                 if (clientProbe) ProbeConnected(pawn);
@@ -310,6 +345,7 @@ public sealed partial class CS2CraftPlugin : BasePlugin, IPluginConfig<CraftConf
         if (!driving) return; // Never apply gameplay effects during read-only observation.
         if (e.Type == 2) { MinecraftDied(pawn); return; }
         if (e.Type == 3) { Explosion(e); return; }
+        if (e.Type == Protocol.EventBuy) { Buy(e, pawn); return; }
         if (e.Type != 1 || !float.IsFinite(e.A) || e.A <= 0 || e.A > 1000
             || !actors.TryGetValue(e.ActorId, out var target) || !target.IsValid || target.Health <= 0) return;
         // e.A is already in CS2 health points (Minecraft's per-weapon table, Cs2Damage.java).
@@ -320,9 +356,70 @@ public sealed partial class CS2CraftPlugin : BasePlugin, IPluginConfig<CraftConf
         if (killed) target.CommitSuicide(false, true);
         else { target.Health -= damage; Utilities.SetStateChanged(target, "CBaseEntity", "m_iHealth"); }
         bridge?.PushInput(new(Protocol.InputHitFeedback, (ushort)(killed ? 1 : 0), unchecked((int)e.ActorId), Math.Max(0, before - damage), damage));
+        if (killed && owner is { IsValid: true } killer && target.TeamNum != pawn.TeamNum)
+        {
+            // CommitSuicide credits nobody; pay the kill reward and count the kill on the scoreboard here.
+            int reward = (e.Flags & 2) != 0 ? Config.KillRewardRanged : Config.KillRewardMelee;
+            if (reward > 0) Economy.AddMoney(killer, reward);
+            CountKill(killer);
+        }
         Logger.LogInformation("CS2Craft: Minecraft hit bot {Bot} for {Damage} ({Before} -> {After} HP){Projectile}",
             target.Controller.Value?.PlayerName ?? "?", damage, before, Math.Max(0, before - damage),
             ((e.Flags & 2) != 0 ? " by projectile" : "") + ((e.Flags & 1) != 0 ? " (critical)" : ""));
+    }
+    /// <summary>Minecraft's buy menu asks for offer e.Weapon at price e.A; CS2's money and buy rules decide.</summary>
+    void Buy(GameEvent e, CCSPlayerPawn pawn)
+    {
+        if (bridge is null || owner is not { IsValid: true } player) return;
+        int price = float.IsFinite(e.A) ? (int)Math.Round(e.A) : -1;
+        int reason = price is < 0 or > 100000 ? Protocol.BuyNotPlaying : economy.TryBuy(player, pawn, price);
+        int left = Economy.Money(player);
+        bridge.PushInput(new(Protocol.InputBuyResult, (ushort)(reason == Protocol.BuyOk ? 1 : 0), unchecked((int)e.Weapon), left, reason));
+        Logger.LogInformation("CS2Craft: Minecraft buy offer {Offer} for ${Price}: {Result} (${Left} left)", e.Weapon, price,
+            reason switch { Protocol.BuyOk => "bought", Protocol.BuyNoMoney => "not enough money", Protocol.BuyNotInZone => "outside a buy zone",
+                Protocol.BuyTimeOver => "buy time over", _ => "refused" }, left);
+    }
+    static void CountKill(CCSPlayerController player)
+    {
+        player.Score += 2;
+        Utilities.SetStateChanged(player, "CCSPlayerController", "m_iScore");
+        if (player.ActionTrackingServices is { } tracking)
+        {
+            tracking.MatchStats.Kills++;
+            Utilities.SetStateChanged(player, "CCSPlayerController", "m_pActionTrackingServices");
+        }
+    }
+    static readonly string[] DoorClasses = { "prop_door_rotating", "func_door_rotating", "func_door" };
+    /// <summary>Bots, other players and doors as depth-only shapes: Minecraft blocks behind them are hidden.</summary>
+    void MovingOccluders(CCSPlayerPawn self)
+    {
+        movingShapes.Clear();
+        if (Config.OccludePlayers && Config.ExperimentalWorldRendering)
+        {
+            foreach (var p in Utilities.GetPlayers())
+            {
+                if (!p.IsValid || !p.PawnIsAlive || p.PlayerPawn.Value is not { IsValid: true } other
+                    || other.EntityHandle.Raw == self.EntityHandle.Raw || other.AbsOrigin is not { } at) continue;
+                var feet = new Point(at.X, at.Y, at.Z);
+                if (DistanceSquared(Coordinates.ToMinecraft(feet), host.Position) > 96 * 96) continue;
+                MovingShapes.Person(movingShapes, feet, other.EyeAngles.Y, other.ViewOffset.Z);
+            }
+            if (GameServer.CurrentTime - doorsFoundAt > 10)
+            {
+                doorsFoundAt = GameServer.CurrentTime;
+                doors = DoorClasses.SelectMany(Utilities.FindAllEntitiesByDesignerName<CBaseModelEntity>).ToList();
+            }
+            foreach (var door in doors)
+            {
+                if (!door.IsValid || door.AbsOrigin is not { } o || door.AbsRotation is not { } r) continue;
+                var min = door.Collision.Mins; var max = door.Collision.Maxs;
+                double yaw = r.Y * Math.PI / 180, cx = (min.X + max.X) / 2, cy = (min.Y + max.Y) / 2;
+                var center = new Point(o.X + cx * Math.Cos(yaw) - cy * Math.Sin(yaw), o.Y + cx * Math.Sin(yaw) + cy * Math.Cos(yaw), o.Z + (min.Z + max.Z) / 2);
+                if (DistanceSquared(Coordinates.ToMinecraft(center), host.Position) > 96 * 96 || movingShapes.Count > 60000 * 3) continue;
+                MovingShapes.Box(movingShapes, center, r.Y, (max.X - min.X) / 2, (max.Y - min.Y) / 2, (max.Z - min.Z) / 2);
+            }
+        }
+        hud.MovingOccluders(movingShapes);
     }
     // CS2's own HE-grenade blast: lit, fogged and post-processed by CS2 like any other effect.
     const string ExplosionEffect = "particles/explosions_fx/explosion_hegrenade.vpcf";
