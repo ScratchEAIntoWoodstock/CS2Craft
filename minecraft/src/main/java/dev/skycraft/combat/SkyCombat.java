@@ -90,7 +90,7 @@ public final class SkyCombat {
 				SkyLink.pushEvent(
 					Proto.EV_HIT_ACTOR, proxy.formId(), hit[0], hit[1], hit[2], hit[3], Float.floatToRawIntBits(hit[4]), Float.floatToRawIntBits(hit[5])
 				);
-				SkyCraft.LOG.info("SkyCraft: hit {} for {} (knockback {})", proxy.getName().getString(), hit[0], hit[3]);
+				SkyCraft.LOG.info("SkyCraft: hit {} for {} CS2 HP (knockback {})", proxy.getName().getString(), hit[0], hit[3]);
 			}
 		}
 	}

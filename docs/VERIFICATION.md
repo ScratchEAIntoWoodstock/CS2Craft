@@ -1,10 +1,32 @@
+# Bow, damage, round loadout, bot block collision, sprint — 2026-10-11
+
+**Evidence from the 19:10 live session (previous update).** The round reset removed 60 blocks and re-linked the player. Diamond-sword hits on bots were 7.0 Minecraft (35 CS2 HP) at full charge, with lower values for spam clicks. The save showed the bow had been fired (bow wear, 16 arrows spent), yet no arrow ever hit a bot. Cause: CS2Craft never drew Minecraft's world-entity table, so arrows were invisible.
+
+**Verified offline.** The native WARP world test now also checks that dropped-item sprites and arrows render, that a NaN entity is skipped, that the outline darkens the box edge and that occluders hide entities: all pass. 40/40 bridge checks pass, including solid-bitset decoding with negative sections. 29/29 Minecraft tests pass, and the C# plugin builds with 0 warnings.
+
+The collider model was chosen by scanning all 13,105 models in pak01_dir.vpk for a single 8-vertex cube hull: `italy_wood_crate_1` is 40.0 × 39.7 × 39.6 units centred on its origin.
+
+**Not yet live-verified.** Collider solidity and invisibility in game, bot behaviour against builds, arrow hits on bots, auto-sprint, the loadout restore and `/cs2craft loadout`.
+
+# Ramps, wall occlusion, round reset — 2026-10-11
+
+**Ramp sticking (offline reproduction).** A scratch simulator compiled the unmodified `TriCollider`/`SkyTri` against the real `de_dust2.c2map` (433,050 triangles). It walked, sprinted and sprint-jumped up and down every walkable slope triangle of at least 0.5 block², 19,158 runs in all. The collider itself rarely stalls: plain walks and sprints stall about 0.1% of the time, and sprint-jump stalls were real clip walls.
+
+The real problem was the body-fit filter in `BlockCollisionsMixin`. It used a box test with 0.05 blocks of slope tolerance and rejected standing on 31.4% of grounded ramp ticks, and crouching on 30.7%. Minecraft's pose fallback therefore chose SWIMMING (crawl): a 0.6-block box, 0.4 eye height and 0.3 speed. The same filter feeds the server's silent "colliding with anything new" teleport-back.
+
+After the fix (`TriCollider.blocksBody`, same cylinder/step rules as movement), standing is rejected on 0.45% of ticks. The remainder is real contact: steps exactly 0.6 tall, wall corners and overhangs. All 27 Dust II ceilings 1.55–1.75 above the floor still reject standing. Three new `TriColliderTest` cases cover the ramp, ceiling and wall contact; 29/29 Minecraft tests pass.
+
+**Occlusion.** Builds pass, and the native WARP occluder hide/clear test passes on the new position-only depth path. Not yet verified in a live CS2 session: whole-map streaming, retention across death and round start, and the round block reset. `css_cs2craft_status` reports occluder regions sent and on the GPU.
+
+**Deployment.** Server, bridge and renderer were staged in runtime/pending-update and installed with Install-PendingUpdate.ps1 while CS2 was closed. Minecraft changes apply on the next `runClient` launch.
+
 # Local death/respawn and raw-input patch integration
 
 Applied patches/death-respawn-mouselook.patch to the actual source, with a previous-life event barrier when entering respawn and before drive mode resumes. Builds pass; 37 bridge checks pass, including an unreadable respawn snapshot followed by discarding the old death event and preserving later events. Native HUD, world and input self-tests pass. Real SDL input and repeated live respawns still require acceptance testing.
 
 The built server and renderer are staged in runtime/pending-update with SHA-256 checksums. Start-CS2.ps1 installs a pending update before launching, after verifying CS2 is closed. The current running game retains its old DLLs until restart.
 
-# Control regression fixes � 2026-10-11
+# Control regression fixes � 2026-10-11
 
 The second live Dust II run used a fresh test world and the rebuilt private runtime. Evidence: dist/control-fixes/client-gameplay.json; runtime/cs2-20261011-152503-346.stdout.log; .cache/minecraft-controls2.log.
 
@@ -18,7 +40,7 @@ The second live Dust II run used a fresh test world and the rebuilt private runt
 
 The physical desktop input check timed out waiting for Computer Use app access. The mouse regression injects decoded relative input into the same native handler, bypassing Windows device delivery. Sword input was injected into Minecraft's bridge, so ammunition stability alone does not prove physical clicks are suppressed. Suppression now consumes raw mouse/button messages and replicates primary/secondary firing locks to each CS2 weapon; physical acceptance remains to be checked. The incoming-damage test injects the same hurt event used by the CS2 damage hook rather than relying on a bot firing. These are focused local tests, not a complete traversal or multiplayer verification.
 
-# Collision and Steve update � 2026-10-11
+# Collision and Steve update � 2026-10-11
 
 The deployed private runtime now uses extracted map physics and a dedicated Minecraft camera.
 

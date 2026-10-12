@@ -29,6 +29,7 @@ public final class SkyCraft implements ModInitializer {
 			giveBuilderKit(handler.getPlayer());
 			dressTestGuest(handler.getPlayer());
 		});
+		RoundLoadout.init(); // after the kit handler: the kits are part of the first loadout
 	}
 
 	/** The mirror world is a void that only exists to host the player; Skyrim drives time and spawning. */

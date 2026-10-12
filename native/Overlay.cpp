@@ -15,6 +15,9 @@
 #include <filesystem>
 #include <string>
 #include <set>
+#include <array>
+#include <map>
+#include <tuple>
 #include "WorldRenderer.h"
 #include "InputRouter.h"
 #include "../third_party/skycraft_protocol_v10.h"
@@ -38,6 +41,21 @@ DirectX::XMFLOAT3 avatarFeet{};
 std::map<std::tuple<int,int,int>,std::vector<float>> hostGeometry;
 bool geometryDirty{};
 std::set<std::tuple<int,int,int>> geometryChanges;
+// Minecraft's solid blocks per 16^3 section (kRenSolids, bit x+16z+256y), for CS2 bot collision.
+// Kept outside WorldRenderer so a D3D device reset cannot drop them; the host polls changes.
+std::map<std::tuple<int,int,int>,std::array<uint64_t,64>> solids;
+std::set<std::tuple<int,int,int>> solidChanges;
+void solidPacket(uint32_t type,const uint8_t* data,uint32_t size){
+    if(type==p::kRenClearAll){for(auto& [key,bits]:solids)solidChanges.insert(key);solids.clear();return;}
+    if(type!=p::kRenSolids||size<sizeof(p::RenSolids))return;
+    p::RenSolids h;memcpy(&h,data,sizeof h);
+    if(std::abs(int64_t(h.sx))>62500||std::abs(int64_t(h.sy))>62500||std::abs(int64_t(h.sz))>62500)return;
+    auto key=std::make_tuple(h.sx,h.sy,h.sz);
+    if(h.count==0){if(size==sizeof h&&solids.erase(key))solidChanges.insert(key);return;}
+    if(size!=sizeof h+512||h.count>4096)return;
+    std::array<uint64_t,64> bits;memcpy(bits.data(),data+sizeof h,512);
+    solids[key]=bits;solidChanges.insert(key);
+}
 uint64_t worldFrames{};
 std::wstring capturePath;
 int captureStatus{};
@@ -145,6 +163,7 @@ bool drainRender(){
         uint64_t total=(8ull+size+7)&~7ull;
         if(total>capacity || pos+total>capacity || total>head-tail)return false;
         world.Packet(type,memory+offset+8,size);
+        solidPacket(type,memory+offset+8,size);
         tail+=total;packets++;
     }
     InterlockedExchange64(reinterpret_cast<volatile LONG64*>(memory+p::kOffRenderRing+64),static_cast<LONG64>(tail));
@@ -189,10 +208,22 @@ void draw(ID3D11RenderTargetView* targetView,UINT w,UINT h){
     context->Draw(3,0);
     context1->SwapDeviceContextState(previous.Get(),nullptr);
 }
+void readWorldEntities(){
+    // Seqlock written by Minecraft each frame; on a torn or in-progress read keep last frame's set.
+    const uint32_t before=load32(p::kOffWorldEntities);
+    if(before&1)return;
+    p::WorldEntities snapshot;
+    memcpy(&snapshot,memory+p::kOffWorldEntities,sizeof snapshot);
+    if(load32(p::kOffWorldEntities)!=before)return;
+    const uint32_t count=std::min(snapshot.count,p::kMaxWorldEntities);
+    float selection[6]={snapshot.selMin[0],snapshot.selMin[1],snapshot.selMin[2],snapshot.selMax[0],snapshot.selMax[1],snapshot.selMax[2]};
+    world.SetWorldEntities(snapshot.entities,count,snapshot.hasSelection?selection:nullptr);
+}
 void drawWorld(ID3D11RenderTargetView* targetView,UINT w,UINT h){
     if(!sceneEnabled || GetTickCount64()-cameraTime>500)return;
     const uint64_t mcBeat=load64(0x18),now=GetTickCount64();
     if(!mcBeat || now<mcBeat || now-mcBeat>3000)return;
+    readWorldEntities();
     if(geometryDirty){
         // Device re-creation or an occlusion toggle: rebuild every region from the retained host copy.
         world.ClearOccluders();geometryChanges.clear();
@@ -355,6 +386,20 @@ extern "C" __declspec(dllexport) void CS2Craft_ClearOccluders(){
     hostGeometry.clear();geometryChanges.clear();world.ClearOccluders();
 }
 extern "C" __declspec(dllexport) uint64_t CS2Craft_OccluderRegions(){std::scoped_lock lock(mutex);return world.Occluders();}
+// A host (re)attaching needs every section with solid blocks again.
+extern "C" __declspec(dllexport) void CS2Craft_ResendSolids(){
+    std::scoped_lock lock(mutex);for(auto& [key,bits]:solids)solidChanges.insert(key);
+}
+// Pops one changed section: its current solid bitset (all zero when the section has no solid blocks).
+extern "C" __declspec(dllexport) int CS2Craft_PollSolids(int* x,int* y,int* z,uint64_t* bits){
+    std::scoped_lock lock(mutex);
+    if(!x||!y||!z||!bits||solidChanges.empty())return 0;
+    auto key=*solidChanges.begin();solidChanges.erase(solidChanges.begin());
+    std::tie(*x,*y,*z)=key;
+    auto found=solids.find(key);
+    if(found==solids.end())memset(bits,0,512);else memcpy(bits,found->second.data(),512);
+    return 1;
+}
 extern "C" __declspec(dllexport) uint64_t CS2Craft_WorldFrames(){std::scoped_lock lock(mutex);return worldFrames;}
 extern "C" __declspec(dllexport) uint64_t CS2Craft_WorldSections(){std::scoped_lock lock(mutex);return world.Sections();}
 extern "C" __declspec(dllexport) uint64_t CS2Craft_RejectedPackets(){std::scoped_lock lock(mutex);return world.GetStats().rejected;}

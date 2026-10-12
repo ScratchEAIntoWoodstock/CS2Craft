@@ -94,4 +94,10 @@ var vox=MapGeometry.Voxelize(0,0,0,[floor]);
 Check(vox.Count>0&&vox.All(b=>b.Layers.Skip(1).All(n=>n==0)),"voxel support stays confined to the actual surface layer");
 var clipPacket=CollisionRegion.Triangles(0,0,0,1,[floor with {Flags=2}]);
 Check(BitConverter.ToUInt32(clipPacket,68)==2,"invisible player-clip flag survives the wire");
+var solidBits=new ulong[64];int solidBit=15+16*1+256*3; // local x=15, z=1, y=3
+solidBits[solidBit>>6]|=1UL<<(solidBit&63);solidBits[0]|=1; // and local (0,0,0)
+var solidBlocks=SolidBlocks.Decode(-1,0,2,solidBits);
+Check(solidBlocks.SetEquals([(-1,3,33),(-16,0,32)]),"solid-block bitset decodes x+16z+256y into world blocks, negative sections included");
+Check(SolidBlocks.Section((-1,3,33))==(-1,0,2)&&SolidBlocks.Section((-16,0,32))==(-1,0,2)&&SolidBlocks.Section((-17,0,31))==(-2,0,1),"block to section uses floor division");
+Check(SolidBlocks.Decode(0,0,0,new ulong[64]).Count==0,"empty section has no colliders");
 Console.WriteLine($"All {count} bridge checks passed.");

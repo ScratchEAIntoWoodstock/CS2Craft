@@ -21,7 +21,7 @@ import net.minecraft.world.level.chunk.LevelChunkSection;
 
 /**
  * CS2 round reset: the mirror world is an empty void, so every block in it was placed by a player.
- * Removes them (and falling blocks / lit TNT) from every loaded chunk near the players.
+ * Removes them from every loaded chunk near the players, plus loose items, arrows, falling blocks and lit TNT.
  */
 public final class RoundReset {
 	// Loaded chunks around a player never exceed render/simulation distance (8), plus margin.
@@ -74,12 +74,14 @@ public final class RoundReset {
 		}
 		List<Entity> loose = new ArrayList<>();
 		for (Entity entity : level.getAllEntities()) {
-			if (entity instanceof FallingBlockEntity || entity instanceof PrimedTnt) {
+			// Inventories are restored to the round loadout too, so dropped items and arrows go.
+			if (entity instanceof FallingBlockEntity || entity instanceof PrimedTnt || entity instanceof net.minecraft.world.entity.item.ItemEntity
+				|| entity instanceof net.minecraft.world.entity.projectile.arrow.AbstractArrow || entity instanceof net.minecraft.world.entity.ExperienceOrb) {
 				loose.add(entity);
 			}
 		}
 		loose.forEach(Entity::discard);
-		SkyCraft.LOG.info("CS2Craft: round reset removed {} blocks and {} falling/TNT entities", removed, loose.size());
+		SkyCraft.LOG.info("CS2Craft: round reset removed {} blocks and {} loose entities (items, arrows, falling blocks, TNT)", removed, loose.size());
 		return removed;
 	}
 }

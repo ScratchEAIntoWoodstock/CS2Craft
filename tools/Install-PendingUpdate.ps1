@@ -27,4 +27,4 @@ foreach($entry in $manifest.Files){
     if((Get-FileHash -LiteralPath (Join-Path $destination $entry.Name) -Algorithm SHA256).Hash -ne $entry.Hash){throw "Installed checksum mismatch: $($entry.Name)"}
 }
 Remove-Item -LiteralPath $manifestPath
-Write-Host 'Installed the pending CS2Craft death/respawn and mouse-input update.'
+Write-Host "Installed the pending CS2Craft update ($($manifest.Files.Count) files)."

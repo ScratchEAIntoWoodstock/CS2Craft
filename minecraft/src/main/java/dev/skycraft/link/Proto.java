@@ -149,6 +149,8 @@ public final class Proto {
 	public static final int SKY_IN_GAME = 1;
 	public static final int SKY_MENU_OPEN = 1 << 1;
 	public static final int SKY_LOADING = 1 << 2;
+	// CS2Craft extension: hold the sprint key while moving (CS2's run speed exceeds Minecraft's walk).
+	public static final int SKY_AUTO_SPRINT = 1 << 16;
 
 	// McState (relative to OFF_MC_STATE)
 	public static final long MS_SEQ = 0x00;

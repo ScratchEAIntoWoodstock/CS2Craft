@@ -32,7 +32,37 @@ Useful commands:
 | `css_cs2craft_attach` | Observe/mirror the pawn without enabling Minecraft movement |
 | `css_cs2craft_drive` | Developer movement toggle; requires config opt-in |
 
-Controls: WASD, mouse look, left-click attack/mine, right-click use/place, 1–9 or wheel for hotbar, E for inventory, Q to drop, F to swap hands, Space to jump, Shift to sneak, Ctrl to sprint. F5 cycles first person, behind Steve, and in front of Steve. Steve wears your equipped Minecraft armor.
+Controls: WASD, mouse look, left-click attack/mine, right-click use/place, 1–9 or wheel for hotbar, E for inventory, Q to drop, F to swap hands, Space to jump, Shift to sneak. Moving forward sprints automatically, like running in CS2 (`AutoSprint`; Ctrl also sprints). Minecraft still needs more than three drumsticks of food to sprint. F5 cycles first person, behind Steve, and in front of Steve. Steve wears your equipped Minecraft armor.
+
+Every CS2 round start resets you: full health and hunger, no effects, and your round loadout back in the inventory, armor included. Your placed blocks, dropped items and arrows are removed. The loadout is the inventory you joined with (the starter kits on a new save). Type `/cs2craft loadout` in Minecraft chat (T) to make your current inventory the loadout. Arrows, dropped items, mining cracks and the targeted-block outline are drawn in CS2.
+
+Weapon damage to bots is in CS2 health (bots have 100) for a full-strength, non-critical hit:
+
+| Weapon | CS2 damage |
+|---|---|
+| Wooden / golden sword | 15 |
+| Stone sword | 20 |
+| Copper sword | 22 |
+| Iron sword | 25 |
+| Diamond sword | 30 (4 hits; 3 critical jump hits) |
+| Netherite sword | 35 |
+| Axes (slower swing) | 25–45 by material |
+| Trident (melee / thrown) | 35 / 40 |
+| Bow, full draw | about 42 (about 65 critical) |
+| Fist / other items | 4 |
+
+Minecraft's own rules still apply on top: attack charge (spam clicking deals less), critical jump hits ×1.5, Sharpness, Strength and Power. `DamageMultiplier` scales everything.
+
+Config (`addons/counterstrikesharp/configs/plugins/CS2Craft.Server/CS2Craft.Server.json` in the runtime):
+
+| Setting | Default | Effect |
+|---|---|---|
+| `RespawnDelaySeconds` | 3 | Respawn delay after a death; negative waits for CS2's own respawn |
+| `ClearBlocksEachRound` | true | Round-start reset of blocks, items, health and loadout |
+| `AutoSprint` | true | Moving forward sprints |
+| `BotBlockCollision` | true | Placed blocks get invisible CS2 colliders (bots, players, bullets) |
+| `MaxBlockColliders` | 2048 | Collider limit |
+| `DamageMultiplier` | 1 | Scales Minecraft damage dealt to bots |
 
 Mouse look now uses native relative input independently of the CS2 character camera. Client and integrated-server movement share exact triangle collision; hidden CS2 weapons are locked against firing. The inventory uses a virtual cursor while CS2 retains its mouse capture. Native mouse/text/wheel routing is implemented; physical desktop-input acceptance still needs manual testing. The automated inventory test verifies bridge cursor/click handling, not real mouse hardware.
 
@@ -54,12 +84,12 @@ To stop Minecraft control, use `css_cs2craft_detach` or close this CS2 session. 
 | Map collision / wall occlusion | Exact triangles from the installed map physics, including baked props; dynamic doors/props are not refreshed |
 | Exact camera / depth / lighting | Dedicated camera entity follows Minecraft eye height and F5; separate depth buffer uses map physics |
 | Minecraft character in third person | Steve skin, animated body/equipment, F5 camera; underlying CS2 pawn remains for combat |
-| Placed blocks blocking CS2 bots | **Not implemented**; Minecraft's own player collides with its blocks |
+| Placed blocks blocking CS2 bots | Invisible 40-unit crate collider per solid block; not yet live-verified. Bots do not path around them: the nav mesh is baked, so they walk into builds and use their own stuck/jump handling |
 | Multiplayer | **Not implemented**; one local human plus bots only |
 
 Before launch, the map exporter reads your installed map's physics and caches its triangles locally. Initial collision loads around the player; movement is held at any unloaded boundary. Crouch clearance and sneak edge checks use map geometry. Block placement picks a grid cell outside the hit surface; fractional-height floors can leave a gap beneath a block.
 
-The health bridge is provisional: lethal bot hits use the suicide API, so kill attribution and full damage/knockback semantics are incomplete. CS2 weapon attacks are held while Minecraft owns movement. CS2's HUD and viewmodel are hidden while the linked Minecraft world is active, then restored.
+The health bridge is provisional. Lethal bot hits use the suicide API, so kill attribution and full damage/knockback semantics are incomplete. Every Minecraft hit on a bot is logged in the CS2Craft plugin log with the bot's health before and after. CS2 weapon attacks are held while Minecraft owns movement. CS2's HUD and viewmodel are hidden while the linked Minecraft world is active, then restored.
 
 Blocks receive approximate Minecraft lighting and no CS2 shadows. Transparency is sorted at mesh/batch level. Fast camera motion, FOV transitions and dynamic geometry need further work. Do not treat this as a polished release.
 

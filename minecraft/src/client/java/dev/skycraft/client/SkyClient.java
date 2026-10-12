@@ -113,6 +113,10 @@ public final class SkyClient {
 			InputBridge.releaseAll();
 		}
 		InputBridge.drain(minecraft);
+		if (sky.autoSprint() && minecraft.gui.screen() == null && !sky.menuOpen() && !sky.loading()) {
+			// Minecraft still decides when sprinting is possible (forward, food, not sneaking or using an item).
+			minecraft.options.keySprint.setDown(true);
+		}
 		ProxySync.frame(minecraft);
 
 		LocalPlayer player = minecraft.player;

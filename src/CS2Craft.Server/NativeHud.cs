@@ -38,6 +38,16 @@ internal sealed class NativeHud
     public void Avatar(Point p,bool show)=>avatar?.Invoke(p.X,p.Y,p.Z,show?1:0);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] delegate void InputStatsDelegate(out ulong window,out ulong hooked,out int status);
     InputStatsDelegate? inputStats;
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] delegate int PollSolidsDelegate(out int x,out int y,out int z,[Out] ulong[] bits);
+    PollSolidsDelegate? pollSolids;
+    StopDelegate? resendSolids;
+    /// <summary>One changed 16^3 section of Minecraft solid blocks (bit x+16z+256y); false when none are pending.</summary>
+    public bool PollSolids(out int x,out int y,out int z,ulong[] bits)
+    {
+        x=y=z=0;
+        return pollSolids is not null && bits.Length==64 && pollSolids(out x,out y,out z,bits)==1;
+    }
+    public void ResendSolids() => resendSolids?.Invoke();
     /// <summary>Raw mouse packets seen through the window subclass and through the GetRawInput* hooks.</summary>
     public void InputStats(out ulong window,out ulong hooked,out int status)
     {
@@ -91,12 +101,14 @@ internal sealed class NativeHud
         poll = Marshal.GetDelegateForFunctionPointer<PollDelegate>(NativeLibrary.GetExport(module,"CS2Craft_PollInput"));
         avatar=Marshal.GetDelegateForFunctionPointer<AvatarDelegate>(NativeLibrary.GetExport(module,"CS2Craft_SetAvatar"));
         inputStats=Marshal.GetDelegateForFunctionPointer<InputStatsDelegate>(NativeLibrary.GetExport(module,"CS2Craft_InputStats"));
+        pollSolids=Marshal.GetDelegateForFunctionPointer<PollSolidsDelegate>(NativeLibrary.GetExport(module,"CS2Craft_PollSolids"));
+        resendSolids=Marshal.GetDelegateForFunctionPointer<StopDelegate>(NativeLibrary.GetExport(module,"CS2Craft_ResendSolids"));
         int result = start();
         Status = result == 0 ? "hook installed (DX11)" : result == 1 ? "skipped (dedicated or secure process)" : $"start failed ({result})";
     }
     public void Stop()
     {
-        stop?.Invoke(); stop=null; avatar=null; inputStats=null; frames=null; camera=null; occluder=null; clearOccluders=null; occluderRegions=null; worldFrames=null; sections=null; rejected=null;capture=null;captureStatus=null;inputMode=null;cursor=null;look=null;testMouse=null;poll=null;
+        stop?.Invoke(); stop=null; avatar=null; inputStats=null; pollSolids=null; resendSolids=null; frames=null; camera=null; occluder=null; clearOccluders=null; occluderRegions=null; worldFrames=null; sections=null; rejected=null;capture=null;captureStatus=null;inputMode=null;cursor=null;look=null;testMouse=null;poll=null;
         // Keep the native module resident until process exit: an in-flight Present may still be returning.
         // CS2Craft_Stop unhooks and releases all resources. A hot reload can start it again.
         Status="stopped";

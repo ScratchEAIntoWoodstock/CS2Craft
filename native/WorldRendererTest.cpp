@@ -91,6 +91,19 @@ extern "C" __declspec(dllexport) int CS2Craft_WorldSelfTest(){
     target.Clear();renderer.Draw(target.view.Get(),128,128,camera,{},true);if(target.Pixel(64,64)!=0xffff0000)return 18;
     batch.first=6;memcpy(avatar.data()+sizeof av,&batch,sizeof batch);if(send(renderer,p::kRenAvatar,avatar))return 19;
     if(renderer.Packet(p::kRenClearAll,nullptr,0)==false||renderer.GetStats().meshBytes||renderer.GetStats().textureBytes)return 20;
+    // World entities (arrows, dropped items) and the block outline are drawn from the per-frame table.
+    atlas.rgba=0xff0000ff;if(!renderer.Packet(p::kRenAtlas,&atlas,sizeof atlas))return 21;
+    p::WorldEntity item{};item.kind=p::kWeItem;item.z=3;item.scale=2;item.uv[0][2]=item.uv[0][3]=1;
+    renderer.SetWorldEntities(&item,1,nullptr);if(draw()!=0xff0000ff)return 22;
+    p::WorldEntity arrow{};arrow.kind=p::kWeArrow;arrow.z=3;arrow.yaw=90;arrow.scale=1;arrow.uv[0][2]=arrow.uv[0][3]=1;
+    p::WorldEntity broken=arrow;broken.x=nan;p::WorldEntity pair[]={broken,arrow};
+    renderer.SetWorldEntities(pair,2,nullptr);if(draw()!=0xff0000ff)return 23; // NaN entity skipped, arrow's vertical plane drawn.
+    float selection[]={-0.5f,-0.5f,2.5f,0.5f,0.5f,3.5f};
+    renderer.SetWorldEntities(&item,1,selection);draw();bool outlined=false;
+    for(UINT x=74;x<=80;x++){uint32_t c=target.Pixel(x,64);if((c&255)>0x80&&(c&255)<0xc0)outlined=true;}
+    if(!outlined)return 24; // 40% black line over the red sprite near the box's projected edge.
+    if(!renderer.Occluder(0,0,0,wall,6)||(renderer.SetWorldEntities(&item,1,nullptr),draw())!=0xff000000)return 25; // Walls hide entities.
+    renderer.ClearOccluders();
     return 0;
 }
 // Replay a bounded real-Minecraft packet capture into an offscreen image. This is not a CS2 screenshot.

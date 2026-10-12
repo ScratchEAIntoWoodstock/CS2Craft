@@ -91,7 +91,7 @@ public class SkyrimActorEntity extends LivingEntity {
 		if (this.isInvulnerableTo(level, source) || dmg <= 0.0F) {
 			return;
 		}
-		this.pendingDamage += dmg;
+		this.pendingDamage += Cs2Damage.toCs2(source, dmg); // the host receives CS2 health points
 		if (source.getDirectEntity() instanceof Projectile) {
 			this.pendingFlags |= Proto.HIT_PROJECTILE;
 		}

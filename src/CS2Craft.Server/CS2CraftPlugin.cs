@@ -19,11 +19,17 @@ public sealed class CraftConfig : BasePluginConfig
     public bool CoarseWorldOcclusion { get; set; } = true;
     public bool HideCS2Viewmodel { get; set; } = true;
     public bool HideCS2Hud { get; set; } = true;
-    public float DamageScale { get; set; } = 5;
+    // Minecraft reports hits on bots in CS2 health points (per-weapon table in Cs2Damage.java); this scales them.
+    public float DamageMultiplier { get; set; } = 1;
     // Seconds after a linked death before the local player is respawned; negative waits for CS2's own respawn.
     public float RespawnDelaySeconds { get; set; } = 3;
     // Remove every block placed in the Minecraft world when a CS2 round starts.
     public bool ClearBlocksEachRound { get; set; } = true;
+    // Moving sprints by default, like running in CS2; Shift still sneaks.
+    public bool AutoSprint { get; set; } = true;
+    // Invisible solid CS2 colliders in placed Minecraft blocks, so bots and bullets are stopped by them.
+    public bool BotBlockCollision { get; set; } = true;
+    public int MaxBlockColliders { get; set; } = 2048;
     public int Width { get; set; } = 1280;
     public int Height { get; set; } = 720;
 }
@@ -51,6 +57,7 @@ public sealed partial class CS2CraftPlugin : BasePlugin, IPluginConfig<CraftConf
     readonly CraftCamera craftCamera = new();
     CollisionSampler? collision;
     OccluderFeed? occluders;
+    BlockColliders? colliders;
     uint epoch = 1, teleport = 1;
     uint attachedPawn;
     HostState host;
@@ -62,8 +69,9 @@ public sealed partial class CS2CraftPlugin : BasePlugin, IPluginConfig<CraftConf
     public void OnConfigParsed(CraftConfig config)
     {
         if (config.Width < 320 || config.Width > Protocol.MaxWidth || config.Height < 200 || config.Height > Protocol.MaxHeight
-            || !float.IsFinite(config.DamageScale) || config.DamageScale <= 0 || config.DamageScale > 100
-            || !float.IsFinite(config.RespawnDelaySeconds) || config.RespawnDelaySeconds > 60)
+            || !float.IsFinite(config.DamageMultiplier) || config.DamageMultiplier <= 0 || config.DamageMultiplier > 10
+            || !float.IsFinite(config.RespawnDelaySeconds) || config.RespawnDelaySeconds > 60
+            || config.MaxBlockColliders < 0 || config.MaxBlockColliders > 8192)
             throw new ArgumentException("Invalid CS2Craft viewport, damage scale or respawn delay.");
         Config = config;
     }
@@ -92,6 +100,8 @@ public sealed partial class CS2CraftPlugin : BasePlugin, IPluginConfig<CraftConf
                 Logger.LogWarning("CS2Craft: input ring full; this round's Minecraft block reset was skipped.");
             return HookResult.Continue;
         });
+        // The block collider model belongs to another map; precache it for whichever map loads.
+        RegisterListener<Listeners.OnServerPrecacheResources>(manifest => manifest.AddResource(BlockColliders.Model));
         RegisterListener<Listeners.OnMapStart>(_ => { Detach(); epoch++; });
         RegisterListener<Listeners.OnMapEnd>(Detach);
         RegisterListener<Listeners.OnPlayerTakeDamagePre>(DamageToPlayer);
@@ -102,7 +112,7 @@ public sealed partial class CS2CraftPlugin : BasePlugin, IPluginConfig<CraftConf
     void Status(CCSPlayerController? player, CommandInfo command)
     {
         hud.InputStats(out ulong windowMouse,out ulong hookedMouse,out int hookStatus);
-        command.ReplyToCommand($"CS2Craft {ModuleVersion}: host={bridge is not null}, minecraft={bridge?.MinecraftAlive == true}, attached={owner?.PlayerName ?? "none"}, driving={driving}, awaitingRespawn={awaitingRespawn}, regions={collision?.Completed ?? 0}, occluders={occluders?.Sent ?? 0}/{occluders?.Total ?? 0} sent/{hud.OccluderRegions} on GPU, HUD={hud.Status}/{hud.Frames} frames, scene={hud.WorldFrames} frames/{hud.Sections} sections/{hud.Rejected} rejected packets, raw mouse={windowMouse} window/{hookedMouse} hooked (hook {hookStatus}). Camera and occlusion remain experimental.");
+        command.ReplyToCommand($"CS2Craft {ModuleVersion}: host={bridge is not null}, minecraft={bridge?.MinecraftAlive == true}, attached={owner?.PlayerName ?? "none"}, driving={driving}, awaitingRespawn={awaitingRespawn}, regions={collision?.Completed ?? 0}, occluders={occluders?.Sent ?? 0}/{occluders?.Total ?? 0} sent/{hud.OccluderRegions} on GPU, block colliders={colliders?.Count ?? 0} (+{colliders?.Pending ?? 0} pending), HUD={hud.Status}/{hud.Frames} frames, scene={hud.WorldFrames} frames/{hud.Sections} sections/{hud.Rejected} rejected packets, raw mouse={windowMouse} window/{hookedMouse} hooked (hook {hookStatus}). Camera and occlusion remain experimental.");
     }
     void Play(CCSPlayerController? player, CommandInfo command)
     {
@@ -134,6 +144,8 @@ public sealed partial class CS2CraftPlugin : BasePlugin, IPluginConfig<CraftConf
         var p = pawn.AbsOrigin!;
         hud.ClearOccluders();
         occluders = new OccluderFeed(collision.Map, Coordinates.ToMinecraft(new(p.X, p.Y, p.Z)));
+        colliders = Config.BotBlockCollision ? new BlockColliders(Config.MaxBlockColliders) : null;
+        hud.ResendSolids();
         host = new(Protocol.HostInGame, MapId(GameServer.MapName), epoch,
             Coordinates.ToMinecraft(new(p.X, p.Y, p.Z)), Coordinates.Yaw(pawn.EyeAngles.Y), pawn.EyeAngles.X,
             teleport, (uint)Config.Width, (uint)Config.Height);
@@ -210,7 +222,8 @@ public sealed partial class CS2CraftPlugin : BasePlugin, IPluginConfig<CraftConf
             var hostPosition = Coordinates.ToMinecraft(new(origin.X, origin.Y, origin.Z));
             if (!driving && DistanceSquared(hostPosition, host.Position) > 0.01) teleport++;
             host = host with { Position = hostPosition, Yaw = driving?look.Yaw:Coordinates.Yaw(pawn.EyeAngles.Y),
-                Pitch = driving?look.Pitch:pawn.EyeAngles.X, Teleport = teleport, Flags = Protocol.HostInGame };
+                Pitch = driving?look.Pitch:pawn.EyeAngles.X, Teleport = teleport,
+                Flags = Protocol.HostInGame | (driving && Config.AutoSprint ? Protocol.HostAutoSprint : 0) };
 
             bridge.Publish(host);
             var viewOffset = pawn.ViewOffset;
@@ -229,6 +242,7 @@ public sealed partial class CS2CraftPlugin : BasePlugin, IPluginConfig<CraftConf
             hud.Camera(eye,cameraYaw,cameraPitch,verticalFov,Config.ExperimentalWorldRendering,Config.CoarseWorldOcclusion);
             collision?.Tick(hostPosition, pawn, 48);
             occluders?.Tick(hud, 8);
+            colliders?.Tick(hud);
             if (ready)
             {
                 if (clientProbe) ProbeConnected(pawn);
@@ -274,10 +288,14 @@ public sealed partial class CS2CraftPlugin : BasePlugin, IPluginConfig<CraftConf
         if (e.Type == 2) { MinecraftDied(pawn); return; }
         if (e.Type != 1 || !float.IsFinite(e.A) || e.A <= 0 || e.A > 1000
             || !actors.TryGetValue(e.ActorId, out var target) || !target.IsValid || target.Health <= 0) return;
-        int damage = Math.Clamp((int)Math.Ceiling(e.A * Config.DamageScale), 1, 10000);
+        // e.A is already in CS2 health points (Minecraft's per-weapon table, Cs2Damage.java).
+        int damage = Math.Clamp((int)Math.Round(e.A * Config.DamageMultiplier), 1, 10000), before = target.Health;
         // Prototype health bridge. Full Source 2 damage attribution/impulses remain a separate integration.
         if (damage >= target.Health) target.CommitSuicide(false, true);
         else { target.Health -= damage; Utilities.SetStateChanged(target, "CBaseEntity", "m_iHealth"); }
+        Logger.LogInformation("CS2Craft: Minecraft hit bot {Bot} for {Damage} ({Before} -> {After} HP){Projectile}",
+            target.Controller.Value?.PlayerName ?? "?", damage, before, Math.Max(0, before - damage),
+            ((e.Flags & 2) != 0 ? " by projectile" : "") + ((e.Flags & 1) != 0 ? " (critical)" : ""));
     }
     HookResult DamageToPlayer(CCSPlayerPawn pawn, CTakeDamageInfo info)
     {
@@ -363,6 +381,7 @@ public sealed partial class CS2CraftPlugin : BasePlugin, IPluginConfig<CraftConf
         hud.Camera(default,0,0,73.7398f,false,false);
         RestoreMovement(); pendingPlay=false;owner = null; actors.Clear(); collision = null;
         occluders = null; hud.ClearOccluders();
+        colliders?.Clear(); colliders = null;
         awaitingRespawn=resumePlay=false; respawnAt=relinkAt=-1;
         if (bridge is not null)
         {

@@ -23,6 +23,7 @@ Vertex VS(Input i){
 }
 float4 VSDepth(float3 p:POSITION):SV_Position{return mul(float4(p+origin.xyz,1),viewProjection);}
 float4 PS(Vertex i):SV_Target{
+    if((i.flags&256)!=0)return i.color; // untextured (block outline)
     float4 value=image.Sample(pointSampler,i.uv)*i.color;
     clip(value.a-((i.flags&1)!=0?0.1:0.003));
     return value;
@@ -77,10 +78,12 @@ void WorldRenderer::DropMesh(Mesh& mesh){stats.meshBytes-=uint64_t(mesh.vertices
 void WorldRenderer::Clear(){
     for(auto& [key,m]:sections)DropMesh(m);sections.clear();
     DropMesh(avatar);DropMesh(scene);textures.clear();stats.textureBytes=0;
+    dynamicVertices.clear();cutoutVertices=crackVertices=lineVertices=0;dynamicDirty=false;
 }
 void WorldRenderer::ClearOccluders(){occluders.clear();stats.occluderBytes=0;}
 void WorldRenderer::Reset(){
     Clear();ClearOccluders();depthView.Reset();depthTexture.Reset();depthW=depthH=0;
+    dynamicBuffer.Reset();dynamicCapacity=0;
     raster.Reset();readDepth.Reset();writeDepth.Reset();depthOnly.Reset();opaque.Reset();alpha.Reset();
     sampler.Reset();constants.Reset();depthLayout.Reset();layout.Reset();ps.Reset();depthVs.Reset();vs.Reset();context.Reset();device.Reset();stats={};
 }
@@ -199,6 +202,122 @@ bool WorldRenderer::Occluder(int x,int y,int z,const float* xyz,uint32_t count){
     occluders[key]=std::move(mesh);stats.occluderBytes=stats.occluderBytes-previous+bytes;
     return true;
 }
+namespace {
+constexpr uint32_t kFullLight=0x0f0f,kWhite=0xffffffff,kCutout=1,kUntextured=256;
+XMFLOAT3 add(XMFLOAT3 a,XMFLOAT3 b){return {a.x+b.x,a.y+b.y,a.z+b.z};}
+XMFLOAT3 mul(XMFLOAT3 a,float s){return {a.x*s,a.y*s,a.z*s};}
+XMFLOAT3 cross(XMFLOAT3 a,XMFLOAT3 b){return {a.y*b.z-a.z*b.y,a.z*b.x-a.x*b.z,a.x*b.y-a.y*b.x};}
+XMFLOAT3 normalized(XMFLOAT3 a,XMFLOAT3 fallback){
+    float l=std::sqrt(a.x*a.x+a.y*a.y+a.z*a.z);return l>1e-5f?mul(a,1/l):fallback;
+}
+bool finiteRect(const float* r){for(int i=0;i<4;i++)if(!std::isfinite(r[i])||r[i]<0||r[i]>1)return false;return true;}
+struct Builder {
+    std::vector<p::RenVertex>& out;
+    void vertex(XMFLOAT3 p,float u,float v,uint32_t color,uint32_t flags){out.push_back({p.x,p.y,p.z,u,v,color,kFullLight,flags});}
+    // a..d go bottom-left, bottom-right, top-right, top-left of the atlas rect {u0,v0,u1,v1}.
+    void quad(XMFLOAT3 a,XMFLOAT3 b,XMFLOAT3 c,XMFLOAT3 d,const float* r,uint32_t color,uint32_t flags){
+        vertex(a,r[0],r[3],color,flags);vertex(b,r[2],r[3],color,flags);vertex(c,r[2],r[1],color,flags);
+        vertex(a,r[0],r[3],color,flags);vertex(c,r[2],r[1],color,flags);vertex(d,r[0],r[1],color,flags);
+    }
+    // Axis-aligned-after-yaw box; faces[] = {side, top, bottom} rects. Face shade uses MC Direction+1.
+    void box(XMFLOAT3 lo,XMFLOAT3 hi,float yaw,XMFLOAT3 pivot,const float* side,const float* top,const float* bottom,
+             uint32_t color,uint32_t topColor,uint32_t flags){
+        float c=std::cos(yaw),s=std::sin(yaw);
+        auto at=[&](float x,float y,float z){
+            float dx=x-pivot.x,dz=z-pivot.z;return XMFLOAT3{pivot.x+dx*c-dz*s,y,pivot.z+dx*s+dz*c};
+        };
+        XMFLOAT3 v[8];for(int i=0;i<8;i++)v[i]=at(i&1?hi.x:lo.x,i&2?hi.y:lo.y,i&4?hi.z:lo.z);
+        quad(v[4],v[5],v[1],v[0],bottom,color,flags|(1u<<4));                 // down
+        quad(v[2],v[3],v[7],v[6],top,topColor,flags|(2u<<4));                 // up
+        quad(v[1],v[0],v[2],v[3],side,color,flags|(3u<<4));                   // north (-z)
+        quad(v[4],v[5],v[7],v[6],side,color,flags|(4u<<4));                   // south (+z)
+        quad(v[0],v[4],v[6],v[2],side,color,flags|(5u<<4));                   // west (-x)
+        quad(v[5],v[1],v[3],v[7],side,color,flags|(6u<<4));                   // east (+x)
+    }
+};
+}
+void WorldRenderer::SetWorldEntities(const p::WorldEntity* entities,uint32_t count,const float* selection){
+    std::vector<p::RenVertex> cutout,cracks,lines;
+    Builder solid{cutout},translucent{cracks};
+    for(uint32_t i=0;i<count;i++){
+        const auto& e=entities[i];
+        XMFLOAT3 pos{e.x,e.y,e.z};
+        if(!finite(pos)||std::abs(e.x)>1e6f||std::abs(e.y)>1e6f||std::abs(e.z)>1e6f||!finite(e.yaw)||!finite(e.pitch)||!finite(e.scale))continue;
+        float yaw=XMConvertToRadians(e.yaw),pitch=XMConvertToRadians(e.pitch),scale=std::clamp(e.scale,0.f,4.f);
+        switch(e.kind){
+        case p::kWeArrow:case p::kWeTrident:{
+            if(!finiteRect(e.uv[0]))break;
+            // Minecraft's arrow: two crossed 16x5 px planes at 1/16*0.9 scale, shifted 4 px back.
+            XMFLOAT3 dir{std::sin(yaw)*std::cos(pitch),std::sin(pitch),std::cos(yaw)*std::cos(pitch)};
+            XMFLOAT3 a=normalized(cross(dir,{0,1,0}),{1,0,0}),b=normalized(cross(a,dir),{0,1,0});
+            bool trident=e.kind==p::kWeTrident;
+            float back=trident?0.9f:0.675f,front=trident?0.3f:0.225f,w=trident?0.3f:0.14f;
+            XMFLOAT3 tail=add(pos,mul(dir,-back)),tip=add(pos,mul(dir,front));
+            for(XMFLOAT3 axis:{a,b})
+                solid.quad(add(tail,mul(axis,-w)),add(tip,mul(axis,-w)),add(tip,mul(axis,w)),add(tail,mul(axis,w)),e.uv[0],kWhite,kCutout);
+            if(!trident&&finiteRect(e.uv[1]))
+                solid.quad(add(add(tail,mul(a,-w)),mul(b,-w)),add(add(tail,mul(a,w)),mul(b,-w)),add(add(tail,mul(a,w)),mul(b,w)),add(add(tail,mul(a,-w)),mul(b,w)),e.uv[1],kWhite,kCutout);
+            break;
+        }
+        case p::kWeItem:{
+            if(!finiteRect(e.uv[0]))break;
+            float h=scale*0.5f;XMFLOAT3 right{std::cos(yaw)*h,0,-std::sin(yaw)*h},up{0,h,0};
+            solid.quad(add(add(pos,mul(right,-1)),mul(up,-1)),add(add(pos,right),mul(up,-1)),add(add(pos,right),up),add(add(pos,mul(right,-1)),up),e.uv[0],kWhite,kCutout);
+            break;
+        }
+        case p::kWeBlock:{
+            if(!finiteRect(e.uv[0])||!finiteRect(e.uv[1])||!finiteRect(e.uv[2]))break;
+            float h=scale*0.5f;
+            solid.box({pos.x-h,pos.y-h,pos.z-h},{pos.x+h,pos.y+h,pos.z+h},yaw,pos,e.uv[0],e.uv[1],e.uv[2],kWhite,e.tint?e.tint:kWhite,kCutout);
+            break;
+        }
+        case p::kWeCrack:{
+            if(!finiteRect(e.uv[0])||!finite(XMFLOAT3{e.ext[0],e.ext[1],e.ext[2]}))break;
+            XMFLOAT3 hi{pos.x+std::clamp(e.ext[0],0.f,2.f),pos.y+std::clamp(e.ext[1],0.f,2.f),pos.z+std::clamp(e.ext[2],0.f,2.f)};
+            translucent.box(pos,hi,0,pos,e.uv[0],e.uv[0],e.uv[0],kWhite,kWhite,0);
+            break;
+        }
+        default:break; // kWeShadow: CS2 has no matching contact shadow; skipped.
+        }
+    }
+    if(selection){
+        bool ok=true;for(int i=0;i<6;i++)ok&=std::isfinite(selection[i])&&std::abs(selection[i])<1e6f;
+        if(ok){
+            // Minecraft's outline: 40% black lines just outside the targeted block.
+            float lo[3],hi[3];for(int i=0;i<3;i++){lo[i]=selection[i]-0.002f;hi[i]=selection[i+3]+0.002f;}
+            auto corner=[&](int i){return XMFLOAT3{i&1?hi[0]:lo[0],i&2?hi[1]:lo[1],i&4?hi[2]:lo[2]};};
+            for(int i=0;i<8;i++)for(int bit:{1,2,4})if(!(i&bit)){
+                for(int end:{i,i|bit}){auto c=corner(end);lines.push_back({c.x,c.y,c.z,0,0,0x66000000u,kFullLight,kUntextured});}
+            }
+        }
+    }
+    dynamicVertices=std::move(cutout);
+    cutoutVertices=static_cast<uint32_t>(dynamicVertices.size());
+    crackVertices=static_cast<uint32_t>(cracks.size());
+    lineVertices=static_cast<uint32_t>(lines.size());
+    dynamicVertices.insert(dynamicVertices.end(),cracks.begin(),cracks.end());
+    dynamicVertices.insert(dynamicVertices.end(),lines.begin(),lines.end());
+    dynamicDirty=true;
+}
+bool WorldRenderer::UploadDynamic(){
+    if(!dynamicDirty)return !dynamicVertices.empty()&&dynamicBuffer;
+    dynamicDirty=false;
+    if(dynamicVertices.empty())return false;
+    const uint32_t needed=static_cast<uint32_t>(dynamicVertices.size());
+    if(needed>dynamicCapacity){
+        dynamicBuffer.Reset();dynamicCapacity=0;
+        uint32_t capacity=std::max(needed,4096u);
+        D3D11_BUFFER_DESC bd{};bd.ByteWidth=capacity*sizeof(p::RenVertex);bd.Usage=D3D11_USAGE_DYNAMIC;
+        bd.BindFlags=D3D11_BIND_VERTEX_BUFFER;bd.CPUAccessFlags=D3D11_CPU_ACCESS_WRITE;
+        if(FAILED(device->CreateBuffer(&bd,nullptr,&dynamicBuffer)))return false;
+        dynamicCapacity=capacity;
+    }
+    D3D11_MAPPED_SUBRESOURCE mapped{};
+    if(FAILED(context->Map(dynamicBuffer.Get(),0,D3D11_MAP_WRITE_DISCARD,0,&mapped)))return false;
+    memcpy(mapped.pData,dynamicVertices.data(),needed*sizeof(p::RenVertex));
+    context->Unmap(dynamicBuffer.Get(),0);
+    return true;
+}
 bool WorldRenderer::Draw(ID3D11RenderTargetView* target,UINT w,UINT h,const Camera& camera,const XMFLOAT3& feet,bool showAvatar){
     if(!device||!w||!h||w>8192||h>8192||!std::isfinite(camera.x)||!std::isfinite(camera.y)||!std::isfinite(camera.z)
       ||!finite(camera.yaw)||!finite(camera.pitch)||!finite(camera.verticalFov)||camera.verticalFov<5||camera.verticalFov>170)return false;
@@ -246,6 +365,16 @@ bool WorldRenderer::Draw(ID3D11RenderTargetView* target,UINT w,UINT h,const Came
         context->IASetInputLayout(layout.Get());context->VSSetShader(vs.Get(),nullptr,0);
     }
     context->PSSetShader(ps.Get(),nullptr,0);
+    const bool dynamic=UploadDynamic();
+    auto atlas=textures.find(0);
+    auto drawDynamic=[&](uint32_t count,uint32_t first){
+        if(!dynamic||!count)return;
+        UINT stride=sizeof(p::RenVertex),offset=0;auto buffer=dynamicBuffer.Get();context->IASetVertexBuffers(0,1,&buffer,&stride,&offset);
+        params.origin={float(-camera.x),float(-camera.y),float(-camera.z),0};
+        context->UpdateSubresource(constants.Get(),0,nullptr,&params,0,0);
+        if(atlas!=textures.end()){auto view=atlas->second.view.Get();context->PSSetShaderResources(0,1,&view);}
+        context->Draw(count,first);stats.draws++;
+    };
     for(int pass=0;pass<2;pass++){
         context->OMSetBlendState(pass?alpha.Get():opaque.Get(),blendFactor,0xffffffff);
         context->OMSetDepthStencilState(pass?readDepth.Get():writeDepth.Get(),0);
@@ -257,6 +386,15 @@ bool WorldRenderer::Draw(ID3D11RenderTargetView* target,UINT w,UINT h,const Came
                 auto view=tex->second.view.Get();context->PSSetShaderResources(0,1,&view);
                 context->Draw(b.count,b.first);stats.draws++;
             }
+        }
+        if(atlas!=textures.end()){
+            if(!pass)drawDynamic(cutoutVertices,0);
+            else drawDynamic(crackVertices,cutoutVertices);
+        }
+        if(pass){
+            context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_LINELIST);
+            drawDynamic(lineVertices,cutoutVertices+crackVertices);
+            context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
         }
     }
     ID3D11ShaderResourceView* noView=nullptr;context->PSSetShaderResources(0,1,&noView);

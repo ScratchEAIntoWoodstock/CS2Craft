@@ -20,6 +20,9 @@ public:
     bool Packet(uint32_t type,const void* payload,size_t bytes);
     bool Occluder(int x,int y,int z,const float* xyz,uint32_t vertexCount);
     void ClearOccluders();
+    // Per-frame Minecraft things drawn without meshes: arrows, dropped items/blocks, mining cracks,
+    // and the targeted-block outline (selection = min xyz, max xyz, or null).
+    void SetWorldEntities(const skycraft::proto::WorldEntity* entities,uint32_t count,const float* selection);
     bool Draw(ID3D11RenderTargetView* target,UINT width,UINT height,const Camera& camera,
               const DirectX::XMFLOAT3& avatarFeet,bool showAvatar);
     Stats GetStats() const {return stats;}
@@ -54,10 +57,16 @@ private:
     std::map<Key,OccluderMesh> occluders;
     std::map<uint32_t,Texture> textures;
     Mesh avatar,scene;
+    // World entities: [cutout triangles | translucent crack triangles | outline lines], rebuilt per frame.
+    std::vector<skycraft::proto::RenVertex> dynamicVertices;
+    uint32_t cutoutVertices{},crackVertices{},lineVertices{},dynamicCapacity{};
+    bool dynamicDirty{};
+    Com<ID3D11Buffer> dynamicBuffer;
     Stats stats;
     bool UploadMesh(Mesh& destination,const skycraft::proto::RenVertex* vertices,uint32_t count,
                     std::vector<skycraft::proto::RenBatch> batches,DirectX::XMFLOAT3 origin);
     bool UploadTexture(uint32_t id,UINT width,UINT height,const void* rgba,size_t bytes);
     void DropMesh(Mesh& mesh);
     bool Consume(uint32_t type,const uint8_t* payload,size_t bytes);
+    bool UploadDynamic();
 };
