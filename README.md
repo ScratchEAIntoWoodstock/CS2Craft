@@ -38,7 +38,7 @@ Controls: WASD, mouse look, left-click attack/mine, right-click use/place, 1–9
 
 Gear works like CS2. Every life starts with the default kit: a stone sword, a bow with 4 arrows, 16 oak planks and 4 cooked beef. Press **B** for Minecraft's buy menu (CS2's own buy menu is kept closed while you play). Items are paid with your **CS2 money**, under CS2's rules: only in a buy zone, only during buy time (`mp_buytime`), and kills on bots earn CS2 kill rewards ($600 melee or TNT, $300 bow, crossbow or trident; also counted on the scoreboard). `/cs2buy <name>` in Minecraft chat buys without the menu, for example `/cs2buy Iron Armor`.
 
-What you buy is kept while you survive, into the next round. Dying, a new match or the half resets you to the default kit. Every round start heals you fully, clears effects and repairs everything you carry; placed blocks, dropped items and arrows are removed. Natural health regeneration is off, as in CS2: heal with potions and golden apples. `/cs2craft loadout` makes your current inventory the default kit for the session (sandbox building); `/cs2craft loadout reset` undoes it.
+Every round starts you over from the default kit, so a bad buy never carries over (set `KeepGearBetweenRounds` to true for CS2's rule, where survivors keep what they bought). Dying also resets you to the default kit. Every round start heals you fully and clears effects; placed blocks, dropped items and arrows are removed. Natural health regeneration is off, as in CS2: heal with potions and golden apples. `/cs2craft loadout` makes your current inventory the default kit for the session (sandbox building); `/cs2craft loadout reset` undoes it.
 
 While you play, the Minecraft HUD shows what CS2's hidden HUD would: money (bottom left), the round clock (top) and a buy reminder during buy time. Every hit on a bot shows in the action bar with a hit sound ("Oli 70 HP (-30)" or "Killed Oli"). Advancement and recipe pop-ups are suppressed.
 
@@ -83,7 +83,7 @@ Config (`addons/counterstrikesharp/configs/plugins/CS2Craft.Server/CS2Craft.Serv
 | `Width` / `Height` | 0 / 0 | Minecraft HUD size; 0 follows CS2's window, so the HUD is crisp rather than stretched |
 | `BuyMenuKey` | 66 (B) | Virtual key hidden from CS2 while playing, so only Minecraft's buy menu opens; 0 disables |
 | `KillRewardMelee` / `KillRewardRanged` | 600 / 300 | CS2 money for a bot killed from Minecraft |
-| `KeepGearBetweenRounds` | true | Survivors keep bought gear; false resets everyone to the default kit every round |
+| `KeepGearBetweenRounds` | false | Every round starts from the default kit; true lets survivors keep bought gear, as in CS2 |
 | `OccludePlayers` | true | Minecraft blocks behind CS2 players, bots and doors are hidden |
 
 Mouse look now uses native relative input independently of the CS2 character camera. Client and integrated-server movement share exact triangle collision; hidden CS2 weapons are locked against firing. The inventory uses a virtual cursor while CS2 retains its mouse capture. Native mouse/text/wheel routing is implemented; physical desktop-input acceptance still needs manual testing. The automated inventory test verifies bridge cursor/click handling, not real mouse hardware.

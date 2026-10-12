@@ -41,9 +41,9 @@ public sealed class CraftConfig : BasePluginConfig
     // CS2 money for a bot killed from Minecraft: melee (swords, axes, TNT) and ranged (bow, crossbow, trident).
     public int KillRewardMelee { get; set; } = 600;
     public int KillRewardRanged { get; set; } = 300;
-    // Like CS2: surviving a round keeps what you bought; dying (or a new match/half) resets to the default kit.
-    // false resets everyone to the default kit every round.
-    public bool KeepGearBetweenRounds { get; set; } = true;
+    // Every round starts from the default kit (stone sword, bow, a few arrows, planks, food), so a bad buy or a
+    // wasted round never carries over. true keeps what a survivor bought, as in CS2 (dying still resets).
+    public bool KeepGearBetweenRounds { get; set; } = false;
     // Hide Minecraft blocks behind CS2 players, bots and doors (approximate body shapes).
     public bool OccludePlayers { get; set; } = true;
 }
@@ -335,8 +335,11 @@ public sealed partial class CS2CraftPlugin : BasePlugin, IPluginConfig<CraftConf
             if (DistanceSquared(mc, host.Position) > 64 * 64) continue;
             uint id = pawn.EntityHandle.Raw;
             actors[id] = pawn;
+            // Minecraft hitbox: the CS2 body (about 20 units across, head top 8 units above the eyes),
+            // not the 32-unit movement hull, so it shrinks when the bot crouches.
+            float height = (float)Math.Clamp((pawn.ViewOffset.Z + 8) / Coordinates.UnitsPerBlock, 1.0, 1.8);
             records.Add(new(id, pawn.TeamNum != playerPawn.TeamNum ? 1u : 0u, mc,
-                Coordinates.Yaw(pawn.EyeAngles.Y), 0.8f, 1.8f, pawn.Health / (float)Math.Max(1, pawn.MaxHealth), p.PlayerName));
+                Coordinates.Yaw(pawn.EyeAngles.Y), 0.5f, height, pawn.Health / (float)Math.Max(1, pawn.MaxHealth), p.PlayerName));
         }
         bridge.PublishActors(records);
     }
