@@ -1,3 +1,32 @@
+# Live probe: TNT effects, durability, HUD feedback, auto HUD size — 2026-10-11
+
+The client probe (`Start-CS2.ps1 -ClientProbe` with a fresh Minecraft save) now runs to 100 s. After the original checks it adds:
+- a full-draw bow shot at a frozen bot;
+- CS2's explosion handler, with a capture;
+- a bullet-mask trace through a placed block's collider, and a bot launched at the block;
+- `mp_restartgame`;
+- holding W for auto-sprint.
+
+Final run (21:12, `CS2Craft-LiveTest-2112`):
+
+| Check | Result |
+|---|---|
+| Sword | 30 (100 → 70) |
+| Bow | 54 by projectile (70 → 16), shown as "Dashen 16 HP (-54)" in the action bar of the captured CS2 backbuffer |
+| `explosionSpawned` | true; `client-explosion.tga` shows CS2's HE-grenade particle in Dust II |
+| `sprintForward` | true |
+| Colliders | 2 built. The trace stopped at −60 units, the face of the neighbouring block's crate (the same-entity check is too strict, so `colliderTraceHit` reads false). After the round restart: 0 colliders, `drivingAfterRound` true |
+
+The earlier run's Minecraft log showed the round reset (2 blocks removed, loadout restored).
+
+**Open.**
+- `maxFloorErrorUnits` was 46 at the new end position after the W walk; earlier positions measured 0.03. Probably a dynamic prop the map export cannot see; to investigate.
+- The bot-push check is weak: the bot was placed against a neighbouring crate and never moved.
+- TNT ignition by flint and steel and the blast exposure through walls are exercised only by the build.
+- Minecraft advancement toasts still appear in the HUD.
+
+The first probe attempt exposed a plugin bug: any Tick exception disposed the bridge, and re-attach was then impossible while Minecraft held the mapping. It is now limited to corrupt mappings.
+
 # Bow, damage, round loadout, bot block collision, sprint — 2026-10-11
 
 **Evidence from the 19:10 live session (previous update).** The round reset removed 60 blocks and re-linked the player. Diamond-sword hits on bots were 7.0 Minecraft (35 CS2 HP) at full charge, with lower values for spam clicks. The save showed the bow had been fired (bow wear, 16 arrows spent), yet no arrow ever hit a bot. Cause: CS2Craft never drew Minecraft's world-entity table, so arrows were invisible.

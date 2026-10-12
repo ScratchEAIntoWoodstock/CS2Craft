@@ -30,6 +30,7 @@ void* target{};
 std::mutex mutex;
 std::atomic<bool> enabled{false};
 std::atomic<uint64_t> packets{0},frames{0};
+std::atomic<uint64_t> backbufferSize{0}; // width << 32 | height of CS2's swap chain, for the HUD viewport
 HANDLE mapping{};
 uint8_t* memory{};
 int front=2;
@@ -277,7 +278,11 @@ HRESULT WINAPI present(IDXGISwapChain* swap,UINT interval,UINT flags){
             ComPtr<ID3D11Device> d;
             if(SUCCEEDED(swap->GetDevice(IID_PPV_ARGS(&d)))){
                 if(device.Get()!=d.Get()){resetGraphics();if(FAILED(initialize(d.Get())))resetGraphics();}
-                DXGI_SWAP_CHAIN_DESC swapDesc{};if(SUCCEEDED(swap->GetDesc(&swapDesc)))InputRouter::Attach(swapDesc.OutputWindow);
+                DXGI_SWAP_CHAIN_DESC swapDesc{};
+                if(SUCCEEDED(swap->GetDesc(&swapDesc))){
+                    InputRouter::Attach(swapDesc.OutputWindow);
+                    backbufferSize=(uint64_t(swapDesc.BufferDesc.Width)<<32)|swapDesc.BufferDesc.Height;
+                }
                 uint64_t mcBeat=load64(0x18),now=GetTickCount64();
                 bool mcAlive=mcBeat&&now>=mcBeat&&now-mcBeat<3000;
                 if(!mcAlive)InputRouter::Mode(false,false,1280,720);
@@ -386,6 +391,11 @@ extern "C" __declspec(dllexport) void CS2Craft_ClearOccluders(){
     hostGeometry.clear();geometryChanges.clear();world.ClearOccluders();
 }
 extern "C" __declspec(dllexport) uint64_t CS2Craft_OccluderRegions(){std::scoped_lock lock(mutex);return world.Occluders();}
+extern "C" __declspec(dllexport) int CS2Craft_BackbufferSize(int* width,int* height){
+    const uint64_t size=backbufferSize.load();
+    if(!width||!height||!size)return 0;
+    *width=int(size>>32);*height=int(size&0xffffffff);return 1;
+}
 // A host (re)attaching needs every section with solid blocks again.
 extern "C" __declspec(dllexport) void CS2Craft_ResendSolids(){
     std::scoped_lock lock(mutex);for(auto& [key,bits]:solids)solidChanges.insert(key);

@@ -21,6 +21,12 @@ internal sealed class BlockColliders
     public int Count => props.Count;
     public int Pending => dirty.Count;
     public BlockColliders(int limit) { this.limit = limit; }
+    /// <summary>Any live collider (the client probe checks it in game).</summary>
+    public bool TryFirst(out (int X,int Y,int Z) block, out CDynamicProp prop)
+    {
+        foreach (var (key, value) in props) if (value.IsValid) { block = key; prop = value; return true; }
+        block = default; prop = null!; return false;
+    }
     public void Tick(NativeHud hud)
     {
         for (int i = 0; i < 64 && hud.PollSolids(out int sx, out int sy, out int sz, bits); i++)

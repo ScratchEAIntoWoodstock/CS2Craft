@@ -63,12 +63,17 @@ public final class InputBridge {
 			}
 			case Proto.IN_RELEASE_ALL -> releaseAll();
 			case Proto.IN_HURT -> hurt(minecraft, code, a / 100.0F, b, c);
+			case Proto.IN_HIT_FEEDBACK -> hitFeedback(minecraft, code != 0, a, b, c);
 			case Proto.IN_ROUND_RESET -> {
 				var server = minecraft.getSingleplayerServer();
 				if (server != null) {
 					server.execute(() -> {
 						server.getAllLevels().forEach(dev.skycraft.world.RoundReset::clear);
-						server.getPlayerList().getPlayers().forEach(dev.skycraft.RoundLoadout::reset);
+						server.getPlayerList().getPlayers().forEach(player -> {
+							dev.skycraft.RoundLoadout.reset(player);
+							player.sendSystemMessage(net.minecraft.network.chat.Component.literal("New round: health, hunger and loadout restored")
+								.withStyle(net.minecraft.ChatFormatting.GREEN), true);
+						});
 					});
 				}
 			}
@@ -81,6 +86,28 @@ public final class InputBridge {
 			default -> {
 			}
 		}
+	}
+
+	/**
+	 * CS2's HUD is hidden while Minecraft plays, so confirm hits on bots in Minecraft's action bar with
+	 * the bot's remaining health, plus Minecraft's "arrow hit a player" ding (lower for a kill).
+	 */
+	private static void hitFeedback(Minecraft minecraft, boolean killed, int actorId, int health, int damage) {
+		if (minecraft.player == null || minecraft.level == null) {
+			return;
+		}
+		String name = "Bot";
+		for (var entity : minecraft.level.entitiesForRendering()) {
+			if (entity instanceof dev.skycraft.combat.SkyrimActorEntity actor && actor.formId() == actorId) {
+				name = actor.getName().getString();
+				break;
+			}
+		}
+		minecraft.player.sendOverlayMessage(killed
+			? net.minecraft.network.chat.Component.literal("Killed " + name + "  (-" + damage + ")").withStyle(net.minecraft.ChatFormatting.RED)
+			: net.minecraft.network.chat.Component.literal(name + "  " + health + " HP  (-" + damage + ")").withStyle(net.minecraft.ChatFormatting.YELLOW));
+		minecraft.getSoundManager().play(net.minecraft.client.resources.sounds.SimpleSoundInstance.forUI(
+			net.minecraft.sounds.SoundEvents.ARROW_HIT_PLAYER, killed ? 0.7F : 1.3F, 0.4F));
 	}
 
 	/** Skyrim hit the player: apply it as Minecraft damage on the integrated server (or the host's). */

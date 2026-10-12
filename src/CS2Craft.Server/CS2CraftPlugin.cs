@@ -7,6 +7,8 @@ using CounterStrikeSharp.API.Modules.Commands;
 using CounterStrikeSharp.API.Modules.Cvars;
 using Microsoft.Extensions.Logging;
 using Vector = CounterStrikeSharp.API.Modules.Utils.Vector;
+using CEntityKeyValues = CounterStrikeSharp.API.Modules.Utils.CEntityKeyValues;
+using KeyValuesType = CounterStrikeSharp.API.Modules.Utils.KeyValuesType;
 using GameServer = CounterStrikeSharp.API.Server;
 
 namespace CS2Craft.Server;
@@ -30,8 +32,9 @@ public sealed class CraftConfig : BasePluginConfig
     // Invisible solid CS2 colliders in placed Minecraft blocks, so bots and bullets are stopped by them.
     public bool BotBlockCollision { get; set; } = true;
     public int MaxBlockColliders { get; set; } = 2048;
-    public int Width { get; set; } = 1280;
-    public int Height { get; set; } = 720;
+    // Minecraft HUD size; 0 follows CS2's window so the HUD is drawn 1:1 instead of stretched.
+    public int Width { get; set; } = 0;
+    public int Height { get; set; } = 0;
 }
 
 [SupportedOSPlatform("windows")]
@@ -66,9 +69,19 @@ public sealed partial class CS2CraftPlugin : BasePlugin, IPluginConfig<CraftConf
     bool awaitingRespawn,resumePlay;
     float respawnAt=-1,relinkAt=-1;
     int ticks;
+    /// <summary>Minecraft HUD size: the configured one, else CS2's swap chain (1280x720 until it is known).</summary>
+    (int W,int H) Viewport()
+    {
+        if (Config.Width > 0 && Config.Height > 0) return (Config.Width, Config.Height);
+        return hud.BackbufferSize(out int w, out int h)
+            ? (Math.Clamp(w, 320, Protocol.MaxWidth), Math.Clamp(h, 200, Protocol.MaxHeight)) : (1280, 720);
+    }
+    int ViewWidth => Viewport().W;
+    int ViewHeight => Viewport().H;
     public void OnConfigParsed(CraftConfig config)
     {
-        if (config.Width < 320 || config.Width > Protocol.MaxWidth || config.Height < 200 || config.Height > Protocol.MaxHeight
+        if ((config.Width != 0 || config.Height != 0)
+            && (config.Width < 320 || config.Width > Protocol.MaxWidth || config.Height < 200 || config.Height > Protocol.MaxHeight)
             || !float.IsFinite(config.DamageMultiplier) || config.DamageMultiplier <= 0 || config.DamageMultiplier > 10
             || !float.IsFinite(config.RespawnDelaySeconds) || config.RespawnDelaySeconds > 60
             || config.MaxBlockColliders < 0 || config.MaxBlockColliders > 8192)
@@ -101,7 +114,11 @@ public sealed partial class CS2CraftPlugin : BasePlugin, IPluginConfig<CraftConf
             return HookResult.Continue;
         });
         // The block collider model belongs to another map; precache it for whichever map loads.
-        RegisterListener<Listeners.OnServerPrecacheResources>(manifest => manifest.AddResource(BlockColliders.Model));
+        RegisterListener<Listeners.OnServerPrecacheResources>(manifest =>
+        {
+            manifest.AddResource(BlockColliders.Model);
+            manifest.AddResource(ExplosionEffect);
+        });
         RegisterListener<Listeners.OnMapStart>(_ => { Detach(); epoch++; });
         RegisterListener<Listeners.OnMapEnd>(Detach);
         RegisterListener<Listeners.OnPlayerTakeDamagePre>(DamageToPlayer);
@@ -148,7 +165,7 @@ public sealed partial class CS2CraftPlugin : BasePlugin, IPluginConfig<CraftConf
         hud.ResendSolids();
         host = new(Protocol.HostInGame, MapId(GameServer.MapName), epoch,
             Coordinates.ToMinecraft(new(p.X, p.Y, p.Z)), Coordinates.Yaw(pawn.EyeAngles.Y), pawn.EyeAngles.X,
-            teleport, (uint)Config.Width, (uint)Config.Height);
+            teleport, (uint)ViewWidth, (uint)ViewHeight);
         bridge.Publish(host);
         bridge.PushCollision(1, BitConverter.GetBytes(epoch));
         reply("CS2Craft attached. Start the CS2Craft Minecraft profile. State/actor mirroring is active; movement stays in CS2 until css_cs2craft_drive.");
@@ -194,11 +211,11 @@ public sealed partial class CS2CraftPlugin : BasePlugin, IPluginConfig<CraftConf
             if (!bridge.MinecraftAlive && driving) RestoreMovement();
             PlayerState playerState=default;
             bool ready = bridge.MinecraftAlive && bridge.TryReadPlayer(out playerState) && (playerState.Flags&Protocol.McInWorld)!=0;
-            if(!ready){hud.InputMode(false,false,Config.Width,Config.Height);input.Release(bridge);}
+            if(!ready){hud.InputMode(false,false,ViewWidth,ViewHeight);input.Release(bridge);}
             presentation.Update(ready && hud.Frames>0,Config.HideCS2Viewmodel,Config.HideCS2Hud);
             if(pendingPlay&&ready&&playerState.TeleportAck==teleport&&(playerState.Flags&Protocol.McDead)==0&&collision?.Ready(playerState.Position)==true)
                 DriveCore(owner,message=>owner?.PrintToChat(message));
-            if(ready&&(!clientProbe||(inputProbe&&probeGameplayFinished)))input.Poll(bridge,hud,driving,(playerState.Flags&Protocol.McScreen)!=0,Config.Width,Config.Height);
+            if(ready&&(!clientProbe||(inputProbe&&probeGameplayFinished)))input.Poll(bridge,hud,driving,(playerState.Flags&Protocol.McScreen)!=0,ViewWidth,ViewHeight);
             if(driving&&hud.Look(out int dx,out int dy))
                 look.Move(dx,dy,ConVar.Find("sensitivity")?.GetPrimitiveValue<float>()??2.5f,
                     ConVar.Find("m_yaw")?.GetPrimitiveValue<float>()??.022f,ConVar.Find("m_pitch")?.GetPrimitiveValue<float>()??.022f);
@@ -223,6 +240,7 @@ public sealed partial class CS2CraftPlugin : BasePlugin, IPluginConfig<CraftConf
             if (!driving && DistanceSquared(hostPosition, host.Position) > 0.01) teleport++;
             host = host with { Position = hostPosition, Yaw = driving?look.Yaw:Coordinates.Yaw(pawn.EyeAngles.Y),
                 Pitch = driving?look.Pitch:pawn.EyeAngles.X, Teleport = teleport,
+                Width = (uint)ViewWidth, Height = (uint)ViewHeight,
                 Flags = Protocol.HostInGame | (driving && Config.AutoSprint ? Protocol.HostAutoSprint : 0) };
 
             bridge.Publish(host);
@@ -259,9 +277,14 @@ public sealed partial class CS2CraftPlugin : BasePlugin, IPluginConfig<CraftConf
         }
         catch (Exception e)
         {
-            Logger.LogError(e, "CS2Craft bridge fault; restoring CS2 controls");
-            Detach();
-            bridge?.Dispose(); bridge = null;
+            // Only a corrupt mapping justifies dropping the bridge: Minecraft keeps the mapping open, so
+            // a new bridge cannot be created until Minecraft restarts. Other faults just restore CS2.
+            bool corrupt = e is InvalidDataException;
+            Logger.LogError(e, corrupt ? "CS2Craft bridge corrupt; restoring CS2 controls"
+                : "CS2Craft fault; restoring CS2 controls (css_cs2craft_play re-attaches)");
+            try { Detach(); }
+            catch (Exception detach) { Logger.LogError(detach, "CS2Craft: restoring CS2 controls failed"); }
+            if (corrupt) { bridge?.Dispose(); bridge = null; }
         }
     }
     void MirrorActors(CCSPlayerPawn playerPawn)
@@ -286,16 +309,49 @@ public sealed partial class CS2CraftPlugin : BasePlugin, IPluginConfig<CraftConf
     {
         if (!driving) return; // Never apply gameplay effects during read-only observation.
         if (e.Type == 2) { MinecraftDied(pawn); return; }
+        if (e.Type == 3) { Explosion(e); return; }
         if (e.Type != 1 || !float.IsFinite(e.A) || e.A <= 0 || e.A > 1000
             || !actors.TryGetValue(e.ActorId, out var target) || !target.IsValid || target.Health <= 0) return;
         // e.A is already in CS2 health points (Minecraft's per-weapon table, Cs2Damage.java).
         int damage = Math.Clamp((int)Math.Round(e.A * Config.DamageMultiplier), 1, 10000), before = target.Health;
+        if ((e.Flags & 2) != 0) probeProjectileHits++;
         // Prototype health bridge. Full Source 2 damage attribution/impulses remain a separate integration.
-        if (damage >= target.Health) target.CommitSuicide(false, true);
+        bool killed = damage >= target.Health;
+        if (killed) target.CommitSuicide(false, true);
         else { target.Health -= damage; Utilities.SetStateChanged(target, "CBaseEntity", "m_iHealth"); }
+        bridge?.PushInput(new(Protocol.InputHitFeedback, (ushort)(killed ? 1 : 0), unchecked((int)e.ActorId), Math.Max(0, before - damage), damage));
         Logger.LogInformation("CS2Craft: Minecraft hit bot {Bot} for {Damage} ({Before} -> {After} HP){Projectile}",
             target.Controller.Value?.PlayerName ?? "?", damage, before, Math.Max(0, before - damage),
             ((e.Flags & 2) != 0 ? " by projectile" : "") + ((e.Flags & 1) != 0 ? " (critical)" : ""));
+    }
+    // CS2's own HE-grenade blast: lit, fogged and post-processed by CS2 like any other effect.
+    const string ExplosionEffect = "particles/explosions_fx/explosion_hegrenade.vpcf";
+    float explosionWindowStart;
+    int explosionsInWindow;
+    /// <summary>A Minecraft explosion (TNT, creeper, bed...) at e.A/B/C with radius e.D: show and play it in CS2.</summary>
+    bool Explosion(GameEvent e)
+    {
+        if (!float.IsFinite(e.A) || !float.IsFinite(e.B) || !float.IsFinite(e.C) || !float.IsFinite(e.D)) return false;
+        var p = Coordinates.ToSource(new(e.A, e.B, e.C));
+        if (Math.Abs(p.X) > 32768 || Math.Abs(p.Y) > 32768 || Math.Abs(p.Z) > 32768) return false;
+        // TNT chains: at most a few effects per second; Minecraft still applies every blast's damage.
+        if (GameServer.CurrentTime - explosionWindowStart > 1) { explosionWindowStart = GameServer.CurrentTime; explosionsInWindow = 0; }
+        if (++explosionsInWindow > 6) return false;
+        var effect = Utilities.CreateEntityByName<CParticleSystem>("info_particle_system");
+        if (effect is null) return false;
+        var origin = new Vector((float)p.X, (float)p.Y, (float)p.Z);
+        using (var values = new CEntityKeyValues())
+        {
+            values["effect_name", KeyValuesType.TYPE_STRING] = ExplosionEffect;
+            values["start_active", KeyValuesType.TYPE_BOOL] = true;
+            values["origin", KeyValuesType.TYPE_VECTOR] = origin;
+            effect.DispatchSpawn(values);
+        }
+        effect.Teleport(origin, null, null);
+        effect.AcceptInput("Start");
+        effect.EmitSound("BaseGrenade.Explode");
+        AddTimer(5, () => { if (effect.IsValid) effect.Remove(); });
+        return true;
     }
     HookResult DamageToPlayer(CCSPlayerPawn pawn, CTakeDamageInfo info)
     {
@@ -362,7 +418,7 @@ public sealed partial class CS2CraftPlugin : BasePlugin, IPluginConfig<CraftConf
         craftCamera.Restore();
         weaponGate.Restore();
         hud.Avatar(default,false);
-        hud.InputMode(false,false,Config.Width,Config.Height);
+        hud.InputMode(false,false,ViewWidth,ViewHeight);
         if (drivenPawn is { IsValid: true })
         {
             if(originalNextAttack is { } attack && drivenPawn.WeaponServices is { } weapons)
@@ -376,7 +432,7 @@ public sealed partial class CS2CraftPlugin : BasePlugin, IPluginConfig<CraftConf
     }
     void Detach()
     {
-        hud.InputMode(false,false,Config.Width,Config.Height);
+        hud.InputMode(false,false,ViewWidth,ViewHeight);
         presentation.Restore();
         hud.Camera(default,0,0,73.7398f,false,false);
         RestoreMovement(); pendingPlay=false;owner = null; actors.Clear(); collision = null;

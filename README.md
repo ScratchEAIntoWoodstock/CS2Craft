@@ -34,7 +34,11 @@ Useful commands:
 
 Controls: WASD, mouse look, left-click attack/mine, right-click use/place, 1–9 or wheel for hotbar, E for inventory, Q to drop, F to swap hands, Space to jump, Shift to sneak. Moving forward sprints automatically, like running in CS2 (`AutoSprint`; Ctrl also sprints). Minecraft still needs more than three drumsticks of food to sprint. F5 cycles first person, behind Steve, and in front of Steve. Steve wears your equipped Minecraft armor.
 
-Every CS2 round start resets you: full health and hunger, no effects, and your round loadout back in the inventory, armor included. Your placed blocks, dropped items and arrows are removed. The loadout is the inventory you joined with (the starter kits on a new save). Type `/cs2craft loadout` in Minecraft chat (T) to make your current inventory the loadout. Arrows, dropped items, mining cracks and the targeted-block outline are drawn in CS2.
+Every CS2 round start resets you: full health and hunger, no effects, and your round loadout back in the inventory, armor included. Your placed blocks, dropped items and arrows are removed. The loadout is the inventory you joined with (the starter kits on a new save). Type `/cs2craft loadout` in Minecraft chat (T) to make your current inventory the loadout. Arrows, dropped items, mining cracks and the targeted-block outline are drawn in CS2. Loadout items come back fully repaired.
+
+Since CS2's HUD is hidden while you play, every hit on a bot shows in Minecraft's action bar with a hit sound: "Oli 70 HP (-30)" or "Killed Oli". Each new round also shows a notice there.
+
+TNT works. Every player gets 16 TNT and a flint and steel once (they become part of the loadout). Light TNT with the flint and steel. A blast plays CS2's own HE-grenade explosion and sound, and walls shield bots and you from it. Blast damage to bots is Minecraft's ×2: about 115 point blank, falling off with distance.
 
 Weapon damage to bots is in CS2 health (bots have 100) for a full-strength, non-critical hit:
 
@@ -48,7 +52,8 @@ Weapon damage to bots is in CS2 health (bots have 100) for a full-strength, non-
 | Netherite sword | 35 |
 | Axes (slower swing) | 25–45 by material |
 | Trident (melee / thrown) | 35 / 40 |
-| Bow, full draw | about 42 (about 65 critical) |
+| Bow, full draw (always critical) | 36–66 (two arrows kill) |
+| TNT | up to about 115, falls off with distance and cover |
 | Fist / other items | 4 |
 
 Minecraft's own rules still apply on top: attack charge (spam clicking deals less), critical jump hits ×1.5, Sharpness, Strength and Power. `DamageMultiplier` scales everything.
@@ -63,6 +68,7 @@ Config (`addons/counterstrikesharp/configs/plugins/CS2Craft.Server/CS2Craft.Serv
 | `BotBlockCollision` | true | Placed blocks get invisible CS2 colliders (bots, players, bullets) |
 | `MaxBlockColliders` | 2048 | Collider limit |
 | `DamageMultiplier` | 1 | Scales Minecraft damage dealt to bots |
+| `Width` / `Height` | 0 / 0 | Minecraft HUD size; 0 follows CS2's window, so the HUD is crisp rather than stretched |
 
 Mouse look now uses native relative input independently of the CS2 character camera. Client and integrated-server movement share exact triangle collision; hidden CS2 weapons are locked against firing. The inventory uses a virtual cursor while CS2 retains its mouse capture. Native mouse/text/wheel routing is implemented; physical desktop-input acceptance still needs manual testing. The automated inventory test verifies bridge cursor/click handling, not real mouse hardware.
 

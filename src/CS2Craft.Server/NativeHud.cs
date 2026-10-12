@@ -48,6 +48,9 @@ internal sealed class NativeHud
         return pollSolids is not null && bits.Length==64 && pollSolids(out x,out y,out z,bits)==1;
     }
     public void ResendSolids() => resendSolids?.Invoke();
+    CursorDelegate? backbufferSize;
+    /// <summary>CS2's swap-chain size once the renderer has presented a linked frame.</summary>
+    public bool BackbufferSize(out int width,out int height){width=height=0;return backbufferSize?.Invoke(out width,out height)==1;}
     /// <summary>Raw mouse packets seen through the window subclass and through the GetRawInput* hooks.</summary>
     public void InputStats(out ulong window,out ulong hooked,out int status)
     {
@@ -103,12 +106,13 @@ internal sealed class NativeHud
         inputStats=Marshal.GetDelegateForFunctionPointer<InputStatsDelegate>(NativeLibrary.GetExport(module,"CS2Craft_InputStats"));
         pollSolids=Marshal.GetDelegateForFunctionPointer<PollSolidsDelegate>(NativeLibrary.GetExport(module,"CS2Craft_PollSolids"));
         resendSolids=Marshal.GetDelegateForFunctionPointer<StopDelegate>(NativeLibrary.GetExport(module,"CS2Craft_ResendSolids"));
+        backbufferSize=Marshal.GetDelegateForFunctionPointer<CursorDelegate>(NativeLibrary.GetExport(module,"CS2Craft_BackbufferSize"));
         int result = start();
         Status = result == 0 ? "hook installed (DX11)" : result == 1 ? "skipped (dedicated or secure process)" : $"start failed ({result})";
     }
     public void Stop()
     {
-        stop?.Invoke(); stop=null; avatar=null; inputStats=null; pollSolids=null; resendSolids=null; frames=null; camera=null; occluder=null; clearOccluders=null; occluderRegions=null; worldFrames=null; sections=null; rejected=null;capture=null;captureStatus=null;inputMode=null;cursor=null;look=null;testMouse=null;poll=null;
+        stop?.Invoke(); stop=null; avatar=null; inputStats=null; pollSolids=null; resendSolids=null; backbufferSize=null; frames=null; camera=null; occluder=null; clearOccluders=null; occluderRegions=null; worldFrames=null; sections=null; rejected=null;capture=null;captureStatus=null;inputMode=null;cursor=null;look=null;testMouse=null;poll=null;
         // Keep the native module resident until process exit: an in-flight Present may still be returning.
         // CS2Craft_Stop unhooks and releases all resources. A hot reload can start it again.
         Status="stopped";

@@ -16,7 +16,7 @@ import net.minecraft.world.item.ItemStack;
 
 /**
  * CS2 rounds reset the player like a fresh life: full health and hunger, no effects, and the round
- * loadout back in the inventory (armour and off hand included).
+ * loadout back in the inventory (armour and off hand included), fully repaired.
  *
  * <p>The loadout is the inventory the player joined with (the starter kits on a new save), or
  * whatever they last saved with {@code /cs2craft loadout}. It is restored before the world saves on
@@ -46,9 +46,18 @@ public final class RoundLoadout {
 		Inventory inventory = player.getInventory();
 		List<ItemStack> items = new ArrayList<>(inventory.getContainerSize());
 		for (int i = 0; i < inventory.getContainerSize(); i++) {
-			items.add(inventory.getItem(i).copy());
+			items.add(fresh(inventory.getItem(i)));
 		}
 		return items;
+	}
+
+	/** A copy as good as new: every round starts with undamaged weapons, tools and armour. */
+	private static ItemStack fresh(ItemStack stack) {
+		ItemStack copy = stack.copy();
+		if (copy.isDamageableItem() && copy.isDamaged()) {
+			copy.setDamageValue(0);
+		}
+		return copy;
 	}
 
 	/** Runs on the server thread. */
@@ -62,7 +71,7 @@ public final class RoundLoadout {
 			Inventory inventory = player.getInventory();
 			inventory.clearContent();
 			for (int i = 0; i < Math.min(loadout.size(), inventory.getContainerSize()); i++) {
-				inventory.setItem(i, loadout.get(i).copy());
+				inventory.setItem(i, fresh(loadout.get(i)));
 			}
 		}
 		player.removeAllEffects();

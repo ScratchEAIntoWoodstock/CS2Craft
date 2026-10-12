@@ -22,6 +22,8 @@ public static class Protocol
     public const uint McInWorld = 1, McScreen = 2, McDead = 32;
     // CS2Craft extension input event: a CS2 round started; Minecraft removes all placed blocks.
     public const ushort InputRoundReset = 64;
+    // CS2Craft extension input event: code 1 = killed, A = actor id, B = health left, C = damage dealt.
+    public const ushort InputHitFeedback = 65;
     public static int Align8(int size) => checked((size + 7) & ~7);
 }
 

@@ -18,6 +18,7 @@ public final class SkyCraft implements ModInitializer {
 	public static final String WORLD_NAME = System.getProperty("cs2craft.world", "CS2Craft");
 	public static final Logger LOG = LoggerFactory.getLogger(MOD_ID);
 	private static final String KIT2_TAG = "skycraft_builder_kit";
+	private static final String TNT_KIT_TAG = "cs2craft_tnt_kit";
 
 	@Override
 	public void onInitialize() {
@@ -27,6 +28,7 @@ public final class SkyCraft implements ModInitializer {
 		ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
 			giveStarterKit(handler.getPlayer());
 			giveBuilderKit(handler.getPlayer());
+			giveDemolitionKit(handler.getPlayer());
 			dressTestGuest(handler.getPlayer());
 		});
 		RoundLoadout.init(); // after the kit handler: the kits are part of the first loadout
@@ -115,6 +117,17 @@ public final class SkyCraft implements ModInitializer {
 		inventory.add(new ItemStack(Items.GOLDEN_APPLE, 4));
 		player.addTag(KIT2_TAG);
 		LOG.info("SkyCraft: gave builder kit to {}", player.getName().getString());
+	}
+
+	/** Once per player: TNT and a flint and steel to light it (part of the round loadout). */
+	private static void giveDemolitionKit(ServerPlayer player) {
+		if (player.entityTags().contains(TNT_KIT_TAG)) {
+			return;
+		}
+		player.getInventory().add(new ItemStack(Items.TNT, 16));
+		player.getInventory().add(new ItemStack(Items.FLINT_AND_STEEL));
+		player.addTag(TNT_KIT_TAG);
+		LOG.info("CS2Craft: gave TNT kit to {}", player.getName().getString());
 	}
 
 	private static void equipIfEmpty(ServerPlayer player, EquipmentSlot slot, net.minecraft.world.item.Item item) {

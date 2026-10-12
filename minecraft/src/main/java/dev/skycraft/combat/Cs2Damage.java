@@ -1,6 +1,7 @@
 package dev.skycraft.combat;
 
 import java.util.Map;
+import net.minecraft.tags.DamageTypeTags;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.projectile.Projectile;
 import net.minecraft.world.entity.projectile.arrow.AbstractArrow;
@@ -41,8 +42,16 @@ public final class Cs2Damage {
 	);
 	/** Fists, tools and anything else held: a punch (1) is 4 HP. */
 	private static final float DEFAULT_FACTOR = 4.0F;
-	/** Arrows: a full-draw bow shot (6) is 42 HP; a critical full draw (~9-10) is about 65. */
-	private static final float ARROW_FACTOR = 7.0F;
+	/**
+	 * Arrows: Minecraft makes every full-draw shot critical (6 plus a random 0-5), so 36-66 HP: two
+	 * arrows kill, one never does. Live probe: factor 7 gave a 77 HP arrow.
+	 */
+	private static final float ARROW_FACTOR = 6.0F;
+	/**
+	 * Explosions: TNT point blank (~57) is about 115 HP, so it kills nearby and falls off with
+	 * distance and cover, like CS2's HE grenade (98 at the centre).
+	 */
+	private static final float EXPLOSION_FACTOR = 2.0F;
 	/** Thrown trident (8): 40 HP. */
 	private static final float THROWN_TRIDENT_FACTOR = 5.0F;
 
@@ -50,6 +59,9 @@ public final class Cs2Damage {
 	}
 
 	public static float toCs2(DamageSource source, float minecraftDamage) {
+		if (source.is(DamageTypeTags.IS_EXPLOSION)) {
+			return minecraftDamage * EXPLOSION_FACTOR;
+		}
 		if (source.getDirectEntity() instanceof ThrownTrident) {
 			return minecraftDamage * THROWN_TRIDENT_FACTOR;
 		}

@@ -42,6 +42,9 @@ public final class Proto {
 	public static final int IN_OPEN_MENU = 8;
 	// CS2Craft extension: a CS2 round started; remove everything players built.
 	public static final int IN_ROUND_RESET = 64;
+	// CS2Craft extension: a Minecraft hit landed on a CS2 bot. code 1 = killed, a = actor id,
+	// b = bot health left, c = damage dealt (CS2 health points).
+	public static final int IN_HIT_FEEDBACK = 65;
 	public static final int HURT_MELEE = 0;
 	public static final int HURT_PROJECTILE = 1;
 	public static final int HURT_MAGIC = 2;
