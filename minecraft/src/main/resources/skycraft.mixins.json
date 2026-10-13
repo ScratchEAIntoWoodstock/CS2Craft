@@ -18,6 +18,7 @@
     "ProjectileUtilMixin",
     "ServerExplosionMixin",
     "ServerPlayerMixin",
+    "PlayerStaminaMixin",
     "SmithingMixin",
     "EntityCollideMixin"
   ],

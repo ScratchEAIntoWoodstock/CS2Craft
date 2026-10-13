@@ -46,6 +46,10 @@ public sealed class CraftConfig : BasePluginConfig
     public bool KeepGearBetweenRounds { get; set; } = false;
     // Hide Minecraft blocks behind CS2 players, bots and doors (approximate body shapes).
     public bool OccludePlayers { get; set; } = true;
+    // How fast sprinting, swimming and jumping use up Minecraft's hunger bar (your stamina): 1 is vanilla
+    // Minecraft, which barely moves in a CS2 round; 3 runs it down to the sprint limit in about a round of
+    // non-stop sprinting. 0 makes moving free. Hunger refills every round; food refills it mid-round.
+    public float StaminaDrain { get; set; } = 3;
 }
 
 [SupportedOSPlatform("windows")]
@@ -101,8 +105,9 @@ public sealed partial class CS2CraftPlugin : BasePlugin, IPluginConfig<CraftConf
             || !float.IsFinite(config.RespawnDelaySeconds) || config.RespawnDelaySeconds > 60
             || config.MaxBlockColliders < 0 || config.MaxBlockColliders > 8192
             || config.BuyMenuKey < 0 || config.BuyMenuKey > 255
+            || !float.IsFinite(config.StaminaDrain) || config.StaminaDrain < 0 || config.StaminaDrain > 10
             || config.KillRewardMelee < 0 || config.KillRewardMelee > 16000 || config.KillRewardRanged < 0 || config.KillRewardRanged > 16000)
-            throw new ArgumentException("Invalid CS2Craft viewport, damage scale, respawn delay, buy key or kill reward.");
+            throw new ArgumentException("Invalid CS2Craft viewport, damage scale, respawn delay, buy key, kill reward or stamina drain.");
         Config = config;
     }
     public override void Load(bool hotReload)
@@ -275,7 +280,7 @@ public sealed partial class CS2CraftPlugin : BasePlugin, IPluginConfig<CraftConf
                 Pitch = driving?look.Pitch:pawn.EyeAngles.X, Teleport = teleport,
                 Width = (uint)ViewWidth, Height = (uint)ViewHeight,
                 Flags = Protocol.HostInGame | (driving && Config.AutoSprint ? Protocol.HostAutoSprint : 0) | (buyZone ? Protocol.HostBuyZone : 0),
-                Money = Economy.Money(owner), BuySeconds = buySeconds, RoundSeconds = roundSeconds };
+                Money = Economy.Money(owner), BuySeconds = buySeconds, RoundSeconds = roundSeconds, StaminaDrain = Config.StaminaDrain };
             hud.BlockKey(driving ? Config.BuyMenuKey : 0);
 
             bridge.Publish(host);

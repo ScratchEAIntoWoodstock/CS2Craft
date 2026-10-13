@@ -36,7 +36,7 @@ Useful commands:
 | `css_cs2craft_attach` | Observe/mirror the pawn without enabling Minecraft movement |
 | `css_cs2craft_drive` | Developer movement toggle; requires config opt-in |
 
-Controls: WASD, mouse look, left-click attack/mine, right-click use/place, 1–9 or wheel for hotbar, E for inventory, Q to drop, F to swap hands, Space to jump, Shift to sneak. Moving forward sprints automatically, like running in CS2 (`AutoSprint`; Ctrl also sprints). Minecraft still needs more than three drumsticks of food to sprint. F5 cycles first person, behind Steve, and in front of Steve. Steve wears your equipped Minecraft armor.
+Controls: WASD, mouse look, left-click attack/mine, right-click use/place, 1–9 or wheel for hotbar, E for inventory, Q to drop, F to swap hands, Space to jump, Shift to sneak. Moving forward sprints automatically, like running in CS2 (`AutoSprint`; Ctrl also sprints). The hunger bar is your stamina: sprinting and jumping drain it (`StaminaDrain`, 3× Minecraft's rate), and below three drumsticks you can no longer sprint. Eat to refill it; every round starts full. F5 cycles first person, behind Steve, and in front of Steve. Steve wears your equipped Minecraft armor.
 
 ### Buying, rounds and the default kit
 
@@ -89,6 +89,7 @@ Config (`addons/counterstrikesharp/configs/plugins/CS2Craft.Server/CS2Craft.Serv
 | `KillRewardMelee` / `KillRewardRanged` | 600 / 300 | CS2 money for a bot killed from Minecraft |
 | `KeepGearBetweenRounds` | false | Every round starts from the default kit; true lets survivors keep bought gear, as in CS2 |
 | `OccludePlayers` | true | Minecraft blocks behind CS2 players, bots and doors are hidden |
+| `StaminaDrain` | 3 | How fast sprinting, swimming and jumping use the hunger bar; 1 is vanilla Minecraft (barely moves in a round), 0 makes moving free |
 
 Mouse look now uses native relative input independently of the CS2 character camera. Client and integrated-server movement share exact triangle collision; hidden CS2 weapons are locked against firing. The inventory uses a virtual cursor while CS2 retains its mouse capture. Native mouse/text/wheel routing is implemented; physical desktop-input acceptance still needs manual testing. The automated inventory test verifies bridge cursor/click handling, not real mouse hardware.
 

@@ -53,7 +53,9 @@ public static class Coordinates
 public readonly record struct HostState(uint Flags, uint WorldId, uint Epoch, Point Position,
     float Yaw, float Pitch, uint Teleport, uint Width = 1280, uint Height = 720,
     // CS2Craft extension (Minecraft's HUD and buy menu): CS2 money, buy time and round time left in seconds.
-    int Money = 0, float BuySeconds = 0, float RoundSeconds = 0);
+    int Money = 0, float BuySeconds = 0, float RoundSeconds = 0,
+    // CS2Craft extension: multiplier on Minecraft's hunger cost of sprinting, swimming and jumping (1 = vanilla).
+    float StaminaDrain = 1);
 public readonly record struct PlayerState(uint Flags, Point Position, float Yaw, float Pitch,
     float EyeHeight, uint TeleportAck, ulong Frame, float VerticalFov, uint CameraMode=0, float CameraDistance=0)
 {

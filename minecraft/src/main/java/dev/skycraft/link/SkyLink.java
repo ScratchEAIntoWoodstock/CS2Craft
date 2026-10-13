@@ -191,6 +191,7 @@ public final class SkyLink {
 		public float gameHour;
 		public int money;
 		public float buySeconds, roundSeconds;
+		public float staminaDrain = 1.0F;
 
 		public boolean inGame() {
 			return (this.flags & SKY_IN_GAME) != 0;
@@ -284,6 +285,7 @@ public final class SkyLink {
 			out.money = s.get(JAVA_INT, b + SS_MONEY);
 			out.buySeconds = s.get(JAVA_FLOAT, b + SS_BUY_SECONDS);
 			out.roundSeconds = s.get(JAVA_FLOAT, b + SS_ROUND_SECONDS);
+			out.staminaDrain = s.get(JAVA_FLOAT, b + SS_STAMINA_DRAIN);
 			VarHandle.loadLoadFence();
 			int seq2 = (int) INT.getAcquire(s, b + SS_SEQ);
 			if (seq1 == seq2) {

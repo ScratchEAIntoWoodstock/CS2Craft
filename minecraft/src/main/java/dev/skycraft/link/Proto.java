@@ -162,6 +162,8 @@ public final class Proto {
 	public static final long SS_MONEY = 0x40;
 	public static final long SS_BUY_SECONDS = 0x44;
 	public static final long SS_ROUND_SECONDS = 0x48;
+	// CS2Craft extension: multiplier on the hunger cost of sprinting, swimming and jumping (float, 1 = vanilla).
+	public static final long SS_STAMINA_DRAIN = 0x4C;
 
 	public static final int SKY_IN_GAME = 1;
 	public static final int SKY_MENU_OPEN = 1 << 1;

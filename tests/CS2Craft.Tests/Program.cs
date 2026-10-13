@@ -41,6 +41,9 @@ bridge.Publish(host with { Flags = 1 | Protocol.HostBuyZone, Money = 4750, BuySe
 Check(bridge.Read<int>(Protocol.Host+64)==4750 && bridge.Read<float>(Protocol.Host+68)==12.5f && bridge.Read<float>(Protocol.Host+72)==101
     && (bridge.Read<uint>(Protocol.Host+4)&Protocol.HostBuyZone)!=0,"money, buy time and round time layout");
 Throws<ArgumentException>(() => bridge.Publish(host with { BuySeconds = float.NaN }), "non-finite buy time rejected");
+bridge.Publish(host with { StaminaDrain = 3 });
+Check(bridge.Read<float>(Protocol.Host+76)==3 && new HostState(1,0,0,default,0,0,0).StaminaDrain==1, "stamina drain layout, vanilla by default");
+Throws<ArgumentException>(() => bridge.Publish(host with { StaminaDrain = -1 }), "negative stamina drain rejected");
 var shapes = new List<float>();
 MovingShapes.Person(shapes, new(400, -800, 0), 90, 64);
 var ys = Enumerable.Range(0, shapes.Count / 3).Select(i => shapes[i * 3 + 1]).ToList();
